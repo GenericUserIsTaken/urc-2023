@@ -3,8 +3,8 @@
 	"tasks": [
 		{
 			"label": "connect, build, and launch",
-			"type": "shell",
-			"command": "sh /auto_build/auto_build.sh",
+			"type": "process",
+			"command": "./auto_build/auto_build.sh",
 			"group": {
 				"kind": "build",
 				"isDefault": true
