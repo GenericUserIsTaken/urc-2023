@@ -25,12 +25,6 @@ from lib.configs import MotorConfigs
 from lib.interface.robot_info import RobotInfo
 from lib.interface.robot_interface import RobotInterface
 
-# constants
-REVS_TO_RADIANS = math.pi * 2.0
-DEGREES_TO_RADIANS = math.pi / 180.0
-RADIANS_TO_DEGREES = 1.0 / DEGREES_TO_RADIANS
-RADIANS_TO_REVS = 1 / (math.pi * 2.0)
-
 
 # websockets really didn't want to run with localhost, so i added 127.0.0.1
 # websockets needs an asyncio context so i impled smth based on this pr:
@@ -171,17 +165,12 @@ class InverseKinematics:
             return
 
         self._ros_node.get_logger().info(
-            f"target: {self.target.t}\nturntable: {sol.q[0]} ({sol.q[0] * RADIANS_TO_REVS})"
-            + f"\nshoulder: {sol.q[1]} ({sol.q[1] * RADIANS_TO_REVS})"
+            f"target: {self.target.t}\nturntable: {sol.q[0]}" + f"\nshoulder: {sol.q[1]}"
         )
 
         # Make motors move to the positions that were found
-        self._interface.runMotorPosition(
-            MotorConfigs.ARM_TURNTABLE_MOTOR, sol.q[0] * RADIANS_TO_REVS
-        )
-        self._interface.runMotorPosition(
-            MotorConfigs.ARM_SHOULDER_MOTOR, -sol.q[1] * RADIANS_TO_REVS
-        )
+        self._interface.runMotorPosition(MotorConfigs.ARM_TURNTABLE_MOTOR, sol.q[0])
+        self._interface.runMotorPosition(MotorConfigs.ARM_SHOULDER_MOTOR, -sol.q[1])
 
     def stopAllMotors(self) -> None:
         """
