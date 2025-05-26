@@ -141,7 +141,7 @@ class MotorConfigs:
         config={
             "servo.max_voltage": 56.0,
             "servopos.position_min": -0.25,
-            "servopos.position_max": 0,
+            "servopos.position_max": 0.03,
             "servo.max_velocity": 0.1,
             "servo.default_velocity_limit": 0.1,
         },
@@ -167,13 +167,13 @@ class MotorConfigs:
         can_id=5,
         config={
             # "motor_position.rotor_to_output_ratio": 0.030581,
-            "servo.pid_position.kp": 30.0,
+            "servo.pid_position.kp": 200.0,
             "servo.pid_position.ki": 0.0,
-            "servo.pid_position.kd": 1.0,
+            "servo.pid_position.kd": 75.0,
             "servo.max_current_A": 10.0,
             "servo.max_velocity": 0.1,
             "servo.default_velocity_limit": 0.1,
-            "servopos.position_min": 0,
+            "servopos.position_min": -1,
             "servopos.position_max": 1,
         },
     )
