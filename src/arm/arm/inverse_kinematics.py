@@ -5,19 +5,22 @@ This file contains the InverseKinematics arm control type, as well as supporting
 import asyncio
 import math
 import os
+import queue
+import threading
 import time
 from typing import Callable
 
 import roboticstoolbox as rtb
 import spatialgeometry as sg
 import spatialmath as sm
-import websockets
+import websockets.asyncio.server
 from rclpy.node import Node
 from roboticstoolbox import ERobot
 from std_msgs.msg import Float32
 from swift import Swift
 from swift.SwiftRoute import SwiftSocket
 
+from lib.color_codes import ColorCodes, colorStr
 from lib.configs import MotorConfigs
 from lib.interface.robot_info import RobotInfo
 from lib.interface.robot_interface import RobotInterface
@@ -30,6 +33,8 @@ RADIANS_TO_REVS = 1 / (math.pi * 2.0)
 
 
 # websockets really didn't want to run with localhost, so i added 127.0.0.1
+# websockets needs an asyncio context so i impled smth based on this pr:
+# https://github.com/jhavl/swift/pull/58/files
 def socket_init(self, outq, inq, run) -> None:  # type: ignore
 
     self.pcs = set()
@@ -40,18 +45,23 @@ def socket_init(self, outq, inq, run) -> None:  # type: ignore
     self.loop = asyncio.new_event_loop()
     asyncio.set_event_loop(self.loop)
 
-    started = False
+    async def _startServer() -> None:
+        # There is an extra arg that swift expects that isn't passed in by websockets anymore. It
+        # isn't used by swift, so lets just pass in a dummy value
+        async def _serve(websocket: websockets.asyncio.server.ServerConnection) -> None:
+            return await self.serve(websocket, "")
 
-    port = 53000
-    while not started and port < 62000:
-        try:
-            start_server = websockets.serve(self.serve, "127.0.0.1", port)
-            self.loop.run_until_complete(start_server)
-            started = True
-        except OSError:
-            port += 1
+        port = 53000
+        while port < 62000:
+            try:
+                async with websockets.asyncio.server.serve(_serve, "127.0.0.1", port) as server:
+                    self.inq.put(port)
+                    await server.serve_forever()
+            except OSError:
+                port += 1
+        raise OSError("No ports available to run the websocket server on")
 
-    self.inq.put(port)
+    self.loop.create_task(_startServer())
     self.loop.run_forever()
 
 
@@ -112,12 +122,20 @@ class InverseKinematics:
         ros_node.create_subscription(Float32, "e_stop", self._eStop, 10)
 
         self._env = Swift()
-        self._env.launch(realtime=True, comms="websocket")
-        self._env.add(self.viator)
         self._target_axes = sg.Axes(0.1, pose=self.target)
-        self._env.add(self._target_axes)
+        threading.Thread(target=self._startSwift).start()
 
-        self._ros_node.create_timer(0.05, self._env.step)
+    def _startSwift(self) -> None:
+        try:
+            self._env.launch(realtime=True, comms="websocket")
+            self._env.add(self.viator)
+            self._env.add(self._target_axes)
+
+            self._ros_node.create_timer(0.05, self._env.step)
+        except queue.Empty:
+            self._ros_node.get_logger().warn(
+                colorStr("Swift client failed to start", ColorCodes.WARNING_YELLOW)
+            )
 
     @property
     def can_send(self) -> bool:
