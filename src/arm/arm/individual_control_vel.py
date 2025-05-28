@@ -68,10 +68,15 @@ class IndividualControlVel:
         ros_node.create_timer(0.1, self.handle_shoulder)
 
     def handle_shoulder(self) -> None:
-        if not self.shoulder_moving:
-            self.arm_interface.shoulderStationary()
-        else:
-            self.arm_interface.runArmShoulderMotorVelocity(self.shoulder_vel)
+        if self.can_send:
+            if not self.shoulder_moving:
+                self._ros_node.get_logger().info("shoulder stationary")
+                self.arm_interface.shoulderStationary()
+            else:
+                self.arm_interface.runArmShoulderMotorVelocity(self.shoulder_vel)
+                self._ros_node.get_logger().info(
+                    "giving shoulder velocity " + str(self.shoulder_vel)
+                )
 
     def leftWristCW(self, msg: Float32) -> None:
         if not self.can_send:
@@ -166,7 +171,7 @@ class IndividualControlVel:
 
         if data != 0:
             self.shoulder_moving = True
-            self._ros_node.get_logger().info("Shoulder up" + str(data * self.SHOULDER_VEL))
+            self._ros_node.get_logger().info("Shoulder moving " + str(data * self.SHOULDER_VEL))
             self.shoulder_vel = self.SHOULDER_VEL * data
 
         else:
