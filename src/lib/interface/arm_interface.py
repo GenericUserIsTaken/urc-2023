@@ -51,13 +51,13 @@ class ArmInterface:
         """
         Updates the current shoulder and elbow positions.
         """
-        self.shoulder_current_pos = (
-            self._info.getMotorState(MotorConfigs.ARM_SHOULDER_MOTOR).position * -REVS_TO_RADIANS
-        )
+        shoulder_position = self._info.getMotorState(MotorConfigs.ARM_SHOULDER_MOTOR).position
+        if shoulder_position is not None:
+            self.shoulder_current_pos = shoulder_position * -REVS_TO_RADIANS
 
-        self.elbow_current_pos = (
-            self._info.getMotorState(MotorConfigs.ARM_ELBOW_MOTOR).position * -REVS_TO_RADIANS
-        )
+        elbow_position = self._info.getMotorState(MotorConfigs.ARM_ELBOW_MOTOR).position
+        if elbow_position is not None:
+            self.elbow_current_pos = elbow_position * -REVS_TO_RADIANS
 
     def calc_shoulder_feedforward(self) -> None:
         """
@@ -103,7 +103,7 @@ class ArmInterface:
             MotorConfigs.ARM_SHOULDER_MOTOR,
             MoteusRunSettings(
                 velocity=0.0,
-                feedforward_torque=-self.shoulder_feedforward,
+                feedforward_torque=0.0,
                 set_stop=False,
             ),
         )
@@ -135,8 +135,9 @@ class ArmInterface:
         Parameters
         -------
         target_velocity: float
-            The target velocity in revolutions per second.
+            The target velocity in radians per second.
         """
+        self.calc_shoulder_feedforward()
 
         self._interface.runMotor(
             MotorConfigs.ARM_SHOULDER_MOTOR,

@@ -71,9 +71,9 @@ class IndividualControlVel:
         if self.can_send:
             if not self.shoulder_moving:
                 self._ros_node.get_logger().info("shoulder stationary")
-                self.arm_interface.shoulderStationary()
+                self.arm_interface.stopShoulder()
             else:
-                self.arm_interface.runArmShoulderMotorVelocity(self.shoulder_vel)
+                self.arm_interface.runShoulderVelocity(self.shoulder_vel)
                 self._ros_node.get_logger().info(
                     "giving shoulder velocity " + str(self.shoulder_vel)
                 )
