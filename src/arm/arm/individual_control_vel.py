@@ -83,13 +83,15 @@ class IndividualControlVel:
         if self.can_send:
             self._ros_node.get_logger().info("-------------handle_shoulder----------------")
             self.arm_interface.runShoulderVelocity(self.shoulder_vel)
-            self._ros_node.get_logger().info("giving shoulder velocity " + str(self.shoulder_vel))
+            self._ros_node.get_logger().info(
+                "running shoulder @ velocity " + str(self.shoulder_vel)
+            )
 
     def handle_elbow(self) -> None:
         if self.can_send:
             self._ros_node.get_logger().info("-------------handle_elbow----------------")
             self.bot_interface.runMotorSpeed(MotorConfigs.ARM_ELBOW_MOTOR, self.elbow_vel)
-            self._ros_node.get_logger().info("giving elbow velocity " + str(self.elbow_vel))
+            self._ros_node.get_logger().info("running elbow @ velocity " + str(self.elbow_vel))
 
     def shoulder_input(self) -> None:
         self._ros_node.get_logger().info("-------------shoulder_input----------------")
@@ -168,7 +170,7 @@ class IndividualControlVel:
         self._ros_node.get_logger().info("-------------elbowUp----------------")
 
         if abs(data) != 0:
-            self._ros_node.get_logger().info("Elbow velocity set to " + str(data * self.VEL))
+            self._ros_node.get_logger().info("Elbow velocity = " + str(data * self.VEL))
             self.elbow_vel = data * self.VEL
 
         else:
@@ -198,8 +200,8 @@ class IndividualControlVel:
         self.last_shoulder_sub_time = time.time()
         self._ros_node.get_logger().info("-------------shoulderUp----------------")
         if data != 0:
-            self._ros_node.get_logger().info("Shoulder moving " + str(data * self.SHOULDER_VEL))
-            self.shoulder_vel = self.SHOULDER_VEL * data
+            self._ros_node.get_logger().info("Shoulder vel = " + str(-data * self.SHOULDER_VEL))
+            self.shoulder_vel = -self.SHOULDER_VEL * data
 
         else:
             self._ros_node.get_logger().info("Controller input 0")

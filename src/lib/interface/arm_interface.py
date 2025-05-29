@@ -73,12 +73,12 @@ class ArmInterface:
                 self.shoulder_current_pos > math.pi
                 and self.shoulder_current_pos - self.elbow_current_pos > math.pi
             ):
-                self.shoulder_feedforward = (
+                self.shoulder_feedforward = -(
                     19.53 * (math.cos(self.shoulder_current_pos))
                 ) + 0.15 * (math.cos(self.shoulder_current_pos - self.elbow_current_pos))
 
             else:
-                self.shoulder_feedforward = (
+                self.shoulder_feedforward = -(
                     19.53 * (math.cos(self.shoulder_current_pos))
                 ) - 0.15 * (math.cos(self.shoulder_current_pos - self.elbow_current_pos))
 
@@ -143,7 +143,7 @@ class ArmInterface:
             MotorConfigs.ARM_SHOULDER_MOTOR,
             MoteusRunSettings(
                 velocity=target_velocity,
-                feedforward_torque=-self.shoulder_feedforward,
+                feedforward_torque=self.shoulder_feedforward,
                 set_stop=False,
             ),
         )
