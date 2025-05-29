@@ -1,3 +1,5 @@
+import time
+
 from rclpy.node import Node
 from std_msgs.msg import Float32
 
@@ -18,10 +20,14 @@ class IndividualControlVel:
         self.arm_interface = arm_interface
         self.arm_interface.update_motor_positions()
 
-        self.shoulder_moving = False
         self.shoulder_vel = 0.0
 
+        self.elbow_vel = 0.0
+
         self.can_send = False
+
+        self.last_shoulder_sub_time = 0.0
+        self.last_elbow_sub_time = 0.0
 
         # Left wrist motor
         self.left_wrist_motor_sub = ros_node.create_subscription(
@@ -67,16 +73,35 @@ class IndividualControlVel:
         # create timer for calling shoulder stationary feedforward method
         ros_node.create_timer(0.1, self.handle_shoulder)
 
+        ros_node.create_timer(0.1, self.handle_elbow)
+
+        ros_node.create_timer(0.1, self.shoulder_input)
+
+        ros_node.create_timer(0.1, self.elbow_input)
+
     def handle_shoulder(self) -> None:
         if self.can_send:
-            if not self.shoulder_moving:
-                self._ros_node.get_logger().info("shoulder stationary")
-                self.arm_interface.stopShoulder()
-            else:
-                self.arm_interface.runShoulderVelocity(self.shoulder_vel)
-                self._ros_node.get_logger().info(
-                    "giving shoulder velocity " + str(self.shoulder_vel)
-                )
+            self._ros_node.get_logger().info("-------------handle_shoulder----------------")
+            self.arm_interface.runShoulderVelocity(self.shoulder_vel)
+            self._ros_node.get_logger().info("giving shoulder velocity " + str(self.shoulder_vel))
+
+    def handle_elbow(self) -> None:
+        if self.can_send:
+            self._ros_node.get_logger().info("-------------handle_elbow----------------")
+            self.bot_interface.runMotorSpeed(MotorConfigs.ARM_ELBOW_MOTOR, self.elbow_vel)
+            self._ros_node.get_logger().info("giving elbow velocity " + str(self.elbow_vel))
+
+    def shoulder_input(self) -> None:
+        self._ros_node.get_logger().info("-------------shoulder_input----------------")
+        if time.time() - self.last_shoulder_sub_time > 0.1:
+            self.shoulder_vel = 0.0
+            self._ros_node.get_logger().info("setting shoulder vel to 0")
+
+    def elbow_input(self) -> None:
+        self._ros_node.get_logger().info("-------------elbow_input----------------")
+        if time.time() - self.last_elbow_sub_time > 0.1:
+            self.elbow_vel = 0.0
+            self._ros_node.get_logger().info("setting elbow vel to 0")
 
     def leftWristCW(self, msg: Float32) -> None:
         if not self.can_send:
@@ -140,13 +165,15 @@ class IndividualControlVel:
 
         data = msg.data
 
-        if abs(data) > 0.001:
-            self._ros_node.get_logger().info("Elbow up" + str(data * self.VEL))
-            self.bot_interface.runMotorSpeed(MotorConfigs.ARM_ELBOW_MOTOR, self.VEL * data)
+        self._ros_node.get_logger().info("-------------elbowUp----------------")
+
+        if abs(data) != 0:
+            self._ros_node.get_logger().info("Elbow velocity set to " + str(data * self.VEL))
+            self.elbow_vel = data * self.VEL
 
         else:
-            self._ros_node.get_logger().info("Elbow down STOP")
-            self.bot_interface.stopMotor(MotorConfigs.ARM_ELBOW_MOTOR)
+            self._ros_node.get_logger().info("Controller input 0")
+            self.elbow_vel = 0.0
 
     def elbowDown(self, msg: Float32) -> None:
         """if not self.can_send:
@@ -168,15 +195,14 @@ class IndividualControlVel:
             return
 
         data = msg.data
-
+        self.last_shoulder_sub_time = time.time()
+        self._ros_node.get_logger().info("-------------shoulderUp----------------")
         if data != 0:
-            self.shoulder_moving = True
             self._ros_node.get_logger().info("Shoulder moving " + str(data * self.SHOULDER_VEL))
             self.shoulder_vel = self.SHOULDER_VEL * data
 
         else:
-            self.shoulder_moving = False
-            self._ros_node.get_logger().info("Shoulder STOP")
+            self._ros_node.get_logger().info("Controller input 0")
             self.shoulder_vel = 0.0
 
     def shoulderDown(self, msg: Float32) -> None:
