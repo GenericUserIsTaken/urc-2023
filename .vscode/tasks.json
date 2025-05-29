@@ -9,6 +9,11 @@
 				"kind": "build",
 				"isDefault": true
 			}
+		},
+		{
+			"label": "connect to Orin",
+			"type": "process",
+			"command": "./auto_build/connect_to_orin.sh",
 		}
 	]
 }
