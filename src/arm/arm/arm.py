@@ -66,12 +66,18 @@ class Arm(Node):
 
             self.individual_control_vel.can_send = False
             self.ik_controls.can_send = False
+            self.ik_controls.shoulder_position = False
+            self.ik_controls.shoulder_moving_to_position = False
         elif self.current_mode == 1:
             self.individual_control_vel.can_send = True
             self.ik_controls.can_send = False
+            self.ik_controls.shoulder_position = False
+            self.ik_controls.shoulder_moving_to_position = False
         elif self.current_mode == 2:
             self.individual_control_vel.can_send = False
             self.ik_controls.can_send = False
+            self.ik_controls.shoulder_position = False
+            self.ik_controls.shoulder_moving_to_position = False
         elif self.current_mode == 3:
             self.individual_control_vel.can_send = False
             self.ik_controls.can_send = True

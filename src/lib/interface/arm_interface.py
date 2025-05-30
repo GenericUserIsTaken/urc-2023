@@ -120,6 +120,7 @@ class ArmInterface:
             The target velocity in revolutions per second.
         """
         self.shoulder_position = False
+        self.shoulder_moving_to_position = False
 
         self._interface.runMotor(
             MotorConfigs.ARM_ELBOW_MOTOR,
@@ -175,3 +176,4 @@ class ArmInterface:
             else:
                 self.stopShoulder()
                 self.shoulder_moving_to_position = False
+                self.shoulder_position = False

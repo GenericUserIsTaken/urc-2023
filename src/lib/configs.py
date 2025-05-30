@@ -151,7 +151,7 @@ class MotorConfigs:
         config={
             "motor_position.rotor_to_output_ratio": 0.01666,
             "servo.pwm_rate_hz": 60000,
-            "servo.pid_position.kp": 10000.0,
+            "servo.pid_position.kp": 1000.0,
             "servo.pid_position.ki": 0.0,
             "servo.pid_position.kd": 0.0,
             "servo.default_timeout_s": 1.0,

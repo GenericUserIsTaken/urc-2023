@@ -176,14 +176,14 @@ class InverseKinematics:
         # self._interface.runMotorPosition(MotorConfigs.ARM_TURNTABLE_MOTOR, sol.q[0])
         self._interface.runMotorPosition(MotorConfigs.ARM_SHOULDER_MOTOR, -sol.q[1])
         self._arm_interface.setShoulderTargetPosition(-sol.q[1])
-        self._interface.runMotorPosition(MotorConfigs.ARM_ELBOW_MOTOR, -sol.q[2])
+        self._interface.runMotorPosition(MotorConfigs.ARM_ELBOW_MOTOR, sol.q[2])
 
     def stopAllMotors(self) -> None:
         """
         Stops, not diables, all motors in the arm
         """
         self._interface.stopMotor(MotorConfigs.ARM_TURNTABLE_MOTOR)
-        self._interface.stopMotor(MotorConfigs.ARM_SHOULDER_MOTOR)
+        self._arm_interface.stopShoulder()
         self._interface.stopMotor(MotorConfigs.ARM_ELBOW_MOTOR)
 
     def _createSub(

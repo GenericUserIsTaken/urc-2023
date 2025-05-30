@@ -94,16 +94,18 @@ class IndividualControlVel:
             self._ros_node.get_logger().info("running elbow @ velocity " + str(self.elbow_vel))
 
     def shoulder_input(self) -> None:
-        self._ros_node.get_logger().info("-------------shoulder_input----------------")
-        if time.time() - self.last_shoulder_sub_time > 0.1:
-            self.shoulder_vel = 0.0
-            self._ros_node.get_logger().info("setting shoulder vel to 0")
+        if self.can_send:
+            self._ros_node.get_logger().info("-------------shoulder_input----------------")
+            if time.time() - self.last_shoulder_sub_time > 0.1:
+                self.shoulder_vel = 0.0
+                self._ros_node.get_logger().info("setting shoulder vel to 0")
 
     def elbow_input(self) -> None:
-        self._ros_node.get_logger().info("-------------elbow_input----------------")
-        if time.time() - self.last_elbow_sub_time > 0.1:
-            self.elbow_vel = 0.0
-            self._ros_node.get_logger().info("setting elbow vel to 0")
+        if self.can_send:
+            self._ros_node.get_logger().info("-------------elbow_input----------------")
+            if time.time() - self.last_elbow_sub_time > 0.1:
+                self.elbow_vel = 0.0
+                self._ros_node.get_logger().info("setting elbow vel to 0")
 
     def leftWristCW(self, msg: Float32) -> None:
         if not self.can_send:
