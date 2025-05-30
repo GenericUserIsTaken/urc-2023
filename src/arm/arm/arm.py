@@ -10,6 +10,7 @@ from std_msgs.msg import Int32
 from custom_interfaces.srv import ArmMode
 from lib.color_codes import ColorCodes, colorStr
 from lib.configs import MotorConfigs
+from lib.interface.arm_interface import ArmInterface
 from lib.interface.robot_info import RobotInfo
 from lib.interface.robot_interface import RobotInterface
 
@@ -39,10 +40,15 @@ class Arm(Node):
 
         self.bot_interface = RobotInterface(self)
         self.bot_info = RobotInfo(self)
+        self.arm_interface = ArmInterface(self, self.bot_info, self.bot_interface)
 
-        self.individual_control_vel = IndividualControlVel(self, self.bot_interface)
+        self.individual_control_vel = IndividualControlVel(
+            self, self.bot_interface, self.arm_interface
+        )
 
-        self.ik_controls = InverseKinematics(self, self.bot_interface, self.bot_info)
+        self.ik_controls = InverseKinematics(
+            self, self.bot_interface, self.bot_info, self.arm_interface
+        )
 
     def modeServiceHandler(self, _: Any, response: ArmMode.Response) -> ArmMode.Response:
         response.current_mode = int(self.current_mode)

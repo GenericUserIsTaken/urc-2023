@@ -22,6 +22,7 @@ from swift.SwiftRoute import SwiftSocket
 
 from lib.color_codes import ColorCodes, colorStr
 from lib.configs import MotorConfigs
+from lib.interface.arm_interface import ArmInterface
 from lib.interface.robot_info import RobotInfo
 from lib.interface.robot_interface import RobotInterface
 
@@ -67,11 +68,14 @@ class InverseKinematics:
     Represents an arm control type that uses InverseKinematics.
     """
 
-    def __init__(self, ros_node: Node, interface: RobotInterface, _: RobotInfo):
+    def __init__(
+        self, ros_node: Node, interface: RobotInterface, _: RobotInfo, arm_interface: ArmInterface
+    ):
 
         self._can_send = False
         self._ros_node = ros_node
         self._interface = interface
+        self._arm_interface = arm_interface
 
         # Initialise model
         self.viator = ERobot.URDF(os.path.join(os.path.dirname(__file__), "../resource/arm.urdf"))
@@ -169,8 +173,10 @@ class InverseKinematics:
         )
 
         # Make motors move to the positions that were found
-        self._interface.runMotorPosition(MotorConfigs.ARM_TURNTABLE_MOTOR, sol.q[0])
+        # self._interface.runMotorPosition(MotorConfigs.ARM_TURNTABLE_MOTOR, sol.q[0])
         self._interface.runMotorPosition(MotorConfigs.ARM_SHOULDER_MOTOR, -sol.q[1])
+        self._arm_interface.setShoulderTargetPosition(-sol.q[1])
+        self._interface.runMotorPosition(MotorConfigs.ARM_ELBOW_MOTOR, -sol.q[2])
 
     def stopAllMotors(self) -> None:
         """
