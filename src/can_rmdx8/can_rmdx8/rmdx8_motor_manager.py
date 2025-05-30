@@ -26,7 +26,7 @@ class RMDx8MotorManager(Node):
         # Publish data period
         self.timer_period = 0.5
         self._pub_index = 0
-        self.timer = self.create_timer(self.timer_period, self._publishData)
+        # self.timer = self.create_timer(self.timer_period, self._publishData)
 
     def _publishData(self) -> None:
         # Publish in a round robin style so that the CAN network isn't filled

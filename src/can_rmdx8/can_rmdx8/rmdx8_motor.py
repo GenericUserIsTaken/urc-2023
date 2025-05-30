@@ -4,6 +4,7 @@
 
 
 import math
+import time
 from threading import Lock
 from typing import TypeGuard
 
@@ -49,6 +50,7 @@ class RMDx8Motor:
         self._subscriber = self._createSubscriber()
 
         self._publisher = self._createPublisher()
+        self._last_message_time = time.time()
 
     # create a subscriber
     def _createSubscriber(self) -> Subscription:
@@ -77,6 +79,9 @@ class RMDx8Motor:
         Updates the RMDx8 motor state
         """
         run_settings = RMDX8RunSettings.fromJsonMsg(msg)
+        if time.time() - self._last_message_time < 0.05:
+            return
+        self._last_message_time = time.time()
 
         try:
             with self.mutex_lock:
