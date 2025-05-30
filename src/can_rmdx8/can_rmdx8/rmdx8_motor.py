@@ -81,57 +81,78 @@ class RMDx8Motor:
         """
         run_settings = RMDX8RunSettings.fromJsonMsg(msg)
 
-        with self.mutex_lock:
-            # Stop if requested
-            if run_settings.set_stop:
-                self.motor.stopMotor()
-                return
+        try:
+            with self.mutex_lock:
+                # Stop if requested
+                if run_settings.set_stop:
+                    self._ros_node.get_logger().info("STOP")
+                    self.motor.stopMotor()
+                    return
 
-            # Else, set values
-            if (
-                run_settings.speed_pi is not None
-                and run_settings.current_pi is not None
-                and run_settings.position_pi is not None
-            ):
-                self.motor.setControllerGains(
-                    Gains(run_settings.current_pi, run_settings.speed_pi, run_settings.position_pi)
-                )
-            elif (
-                run_settings.speed_pi is not None
-                or run_settings.current_pi is not None
-                or run_settings.position_pi is not None
-            ):
-                raise ValueError("All 3 PiGains must all be defined or all be None")
+                if (
+                    _checkValid(run_settings.position)
+                    + _checkValid(run_settings.velocity)
+                    + _checkValid(run_settings.current)
+                    > 1
+                ):
+                    raise ValueError(
+                        "Only one of `position`, `velocity`, or `current` can be present"
+                    )
 
-            if _checkValid(run_settings.position):
-                # Position is 0.01 dps and velocity is dps
-                self.motor.sendPositionAbsoluteSetpoint(
-                    run_settings.position * DEGREE_TO_REV * 100,
-                    _validOrZero(run_settings.velocity) * DEGREE_TO_REV,
-                )
-            if _checkValid(run_settings.velocity):
-                # Velocity is 0.01 dps
-                self.motor.sendVelocitySetpoint(run_settings.velocity * DEGREE_TO_REV * 100)
+                # Else, set values
+                if (
+                    run_settings.speed_pi is not None
+                    and run_settings.current_pi is not None
+                    and run_settings.position_pi is not None
+                ):
+                    self.motor.setControllerGains(
+                        Gains(
+                            run_settings.current_pi, run_settings.speed_pi, run_settings.position_pi
+                        )
+                    )
+                    self._ros_node.get_logger().info("SET GAINS")
+                elif (
+                    run_settings.speed_pi is not None
+                    or run_settings.current_pi is not None
+                    or run_settings.position_pi is not None
+                ):
+                    raise ValueError("All 3 PiGains must all be defined or all be None")
 
-            if _checkValid(run_settings.current):
-                # Value is 0.01 A
-                self.motor.sendCurrentSetpoint(run_settings.current * 100)
+                if _checkValid(run_settings.position):
+                    # Position is 0.01 dps and velocity is dps
+                    self.motor.sendPositionAbsoluteSetpoint(
+                        run_settings.position * DEGREE_TO_REV * 100,
+                        _validOrZero(run_settings.velocity) * DEGREE_TO_REV,
+                    )
+                    self._ros_node.get_logger().info("POSITION")
+                if _checkValid(run_settings.velocity):
+                    # Velocity is 0.01 dps
+                    self.motor.sendVelocitySetpoint(run_settings.velocity * DEGREE_TO_REV * 100)
+                    self._ros_node.get_logger().info("VELOCITY")
 
-            # Acceleration and type must both be set
-            if _checkValid(run_settings.acceleration) != (
-                run_settings.acceleration_type is not None
-            ):
-                raise ValueError(
-                    "`acceleration` and `acceleration_type` must both be None or not None"
-                )
-            if (
-                _checkValid(run_settings.acceleration)
-                and run_settings.acceleration_type is not None
-            ):
-                # Acceleration is dps/s
-                self.motor.setAcceleration(
-                    run_settings.acceleration * 360, run_settings.acceleration_type
-                )
+                if _checkValid(run_settings.current):
+                    # Value is 0.01 A
+                    self.motor.sendCurrentSetpoint(run_settings.current * 100)
+                    self._ros_node.get_logger().info("CURRENT")
+
+                # Acceleration and type must both be set
+                if _checkValid(run_settings.acceleration) != (
+                    run_settings.acceleration_type is not None
+                ):
+                    raise ValueError(
+                        "`acceleration` and `acceleration_type` must both be None or not None"
+                    )
+                if (
+                    _checkValid(run_settings.acceleration)
+                    and run_settings.acceleration_type is not None
+                ):
+                    # Acceleration is dps/s
+                    self.motor.setAcceleration(
+                        run_settings.acceleration * 360, run_settings.acceleration_type
+                    )
+                    self._ros_node.get_logger().info("ACCLEREATION")
+        except rmd.ProtocolException as ex:
+            self._ros_node.get_logger().warning(f"Ignoring rmd protocol exception: {ex}")
 
     def publishData(self) -> None:
         """
