@@ -109,90 +109,13 @@ class MotorConfigs:
     )
 
     # Drivebase
-    REAR_RIGHT_DRIVE_MOTOR = MoteusMotorConfig(
-        can_id=20,
-        config={
-            "servo.pwm_rate_hz": 50000,
-            "servo.pid_position.kp": 20.0,
-            "servo.pid_position.ki": 0.0,
-            "servo.pid_position.kd": 0.0,
-            "servo.default_timeout_s": 0.5,
-            "servo.max_current_A": 10.0,
-            "servo.max_velocity": 100.0,
-            "servopos.position_min": math.nan,
-            "servopos.position_max": math.nan,
-        },
-    )
-    MID_RIGHT_DRIVE_MOTOR = MoteusMotorConfig(
-        can_id=21,
-        config={
-            "servo.pwm_rate_hz": 50000,
-            "servo.pid_position.kp": 20.0,
-            "servo.pid_position.ki": 0.0,
-            "servo.pid_position.kd": 0.0,
-            "servo.default_timeout_s": 0.5,
-            "servo.max_current_A": 10.0,
-            "servo.max_velocity": 100.0,
-            "servopos.position_min": math.nan,
-            "servopos.position_max": math.nan,
-        },
-    )
-    FRONT_RIGHT_DRIVE_MOTOR = MoteusMotorConfig(
-        can_id=22,
-        config={
-            "servo.pid_position.kp": 20.0,
-            "servo.pid_position.ki": 0.0,
-            "servo.pid_position.kd": 0.0,
-            "servo.default_timeout_s": 0.5,
-            "servo.max_current_A": 10.0,
-            "servo.max_velocity": 100.0,
-            "servopos.position_min": math.nan,
-            "servopos.position_max": math.nan,
-        },
-    )
+    REAR_RIGHT_DRIVE_MOTOR = RMDx8MotorConfig(can_id=25)
+    MID_RIGHT_DRIVE_MOTOR = RMDx8MotorConfig(can_id=23)
+    FRONT_RIGHT_DRIVE_MOTOR = RMDx8MotorConfig(can_id=21)
 
-    REAR_LEFT_DRIVE_MOTOR = MoteusMotorConfig(
-        can_id=23,
-        config={
-            "servo.pwm_rate_hz": 50000,
-            "servo.pid_position.kp": 20.0,
-            "servo.pid_position.ki": 0.0,
-            "servo.pid_position.kd": 0.0,
-            "servo.default_timeout_s": 0.5,
-            "servo.max_current_A": 10.0,
-            "servo.max_velocity": 100.0,
-            "servopos.position_min": math.nan,
-            "servopos.position_max": math.nan,
-        },
-    )
-    MID_LEFT_DRIVE_MOTOR = MoteusMotorConfig(
-        can_id=24,
-        config={
-            "servo.pwm_rate_hz": 50000,
-            "servo.pid_position.kp": 20.0,
-            "servo.pid_position.ki": 0.0,
-            "servo.pid_position.kd": 0.0,
-            "servo.default_timeout_s": 0.5,
-            "servo.max_current_A": 10.0,
-            "servo.max_velocity": 100.0,
-            "servopos.position_min": math.nan,
-            "servopos.position_max": math.nan,
-        },
-    )
-    FRONT_LEFT_DRIVE_MOTOR = MoteusMotorConfig(
-        can_id=25,
-        config={
-            "servo.pwm_rate_hz": 50000,
-            "servo.pid_position.kp": 20.0,
-            "servo.pid_position.ki": 0.0,
-            "servo.pid_position.kd": 0.0,
-            "servo.default_timeout_s": 0.5,
-            "servo.max_current_A": 10.0,
-            "servo.max_velocity": 100.0,
-            "servopos.position_min": math.nan,
-            "servopos.position_max": math.nan,
-        },
-    )
+    REAR_LEFT_DRIVE_MOTOR = RMDx8MotorConfig(can_id=26)
+    MID_LEFT_DRIVE_MOTOR = RMDx8MotorConfig(can_id=24)
+    FRONT_LEFT_DRIVE_MOTOR = RMDx8MotorConfig(can_id=22)
 
     # Arm
     ARM_SHOULDER_MOTOR = MoteusMotorConfig(
