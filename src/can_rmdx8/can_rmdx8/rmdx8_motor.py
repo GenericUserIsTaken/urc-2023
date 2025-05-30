@@ -50,10 +50,6 @@ class RMDx8Motor:
 
         self._publisher = self._createPublisher()
 
-        # Publish a message every 0.05 seconds
-        timer_period = 0.05
-        self.timer = ros_node.create_timer(timer_period, self.publishData)
-
     # create a subscriber
     def _createSubscriber(self) -> Subscription:
         topic_name = self.config.getInterfaceTopicName()
@@ -61,7 +57,7 @@ class RMDx8Motor:
             std_msgs.msg.String,
             topic_name,
             self.dataInCallback,
-            1,
+            10,
         )
         return subscriber
 
@@ -72,7 +68,7 @@ class RMDx8Motor:
         """
         topic_name = self.config.getCanTopicName()
         # Size of queue is 1. All additional ones are dropped
-        publisher = self._ros_node.create_publisher(std_msgs.msg.String, topic_name, 1)
+        publisher = self._ros_node.create_publisher(std_msgs.msg.String, topic_name, 10)
         self._ros_node.get_logger().info("RMDx8 Publisher Created!!")
         return publisher
 
@@ -87,7 +83,7 @@ class RMDx8Motor:
                 # Stop if requested
                 if run_settings.set_stop:
                     self._ros_node.get_logger().info("STOP")
-                    self.motor.stopMotor()
+                    self.stopMotor()
                     return
 
                 if (
@@ -152,29 +148,36 @@ class RMDx8Motor:
                         run_settings.acceleration * 360, run_settings.acceleration_type
                     )
                     self._ros_node.get_logger().info("ACCLEREATION")
-        except rmd.ProtocolException as ex:
+        except (rmd.ProtocolException, rmd.can.ProtocolViolationError) as ex:
             self._ros_node.get_logger().warning(f"Ignoring rmd protocol exception: {ex}")
 
     def publishData(self) -> None:
         """
         Publishes data from the rmdx8 controller
         """
-        with self.mutex_lock:
-            state = RMDX8MotorState.fromRMDX8Data(
-                self.config.can_id,
-                self.motor.getMotorStatus1(),
-                self.motor.getMotorStatus2(),
-                self.motor.getMotorPower(),
-                self.motor.getAcceleration(),
-            )
-            if state.error_code != 0:
-                self.motor.shutdownMotor()
-                self._ros_node.get_logger().error(
-                    colorStr(
-                        "RMDx8 Motor Error State: " + str(state.error_code), ColorCodes.FAIL_RED
-                    )
+        try:
+            with self.mutex_lock:
+                state = RMDX8MotorState.fromRMDX8Data(
+                    self.config.can_id,
+                    self.motor.getMotorStatus1(),
+                    self.motor.getMotorStatus2(),
+                    self.motor.getMotorPower(),
+                    self.motor.getAcceleration(),
                 )
-        self._publisher.publish(state.toMsg())
+                if state.error_code != 0:
+                    self.motor.shutdownMotor()
+                    self._ros_node.get_logger().error(
+                        colorStr(
+                            "RMDx8 Motor Error State: " + str(state.error_code), ColorCodes.FAIL_RED
+                        )
+                    )
+            self._publisher.publish(state.toMsg())
+        except (
+            rmd.ProtocolException,
+            rmd.can.ProtocolViolationError,
+            rmd.can.SocketException,
+        ) as ex:
+            self._ros_node.get_logger().info("Ignoring socket exception: " + str(ex))
 
     def stopMotor(self) -> None:
         """

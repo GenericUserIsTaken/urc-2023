@@ -23,6 +23,19 @@ class RMDx8MotorManager(Node):
         self.driver = rmd.CanDriver("can1")
         self.createRMDx8Motors()
 
+        # Publish data period
+        self.timer_period = 0.5
+        self._pub_index = 0
+        self.timer = self.create_timer(self.timer_period, self._publishData)
+
+    def _publishData(self) -> None:
+        # Publish in a round robin style so that the CAN network isn't filled
+        self.get_logger().info("START PUB")
+        list(self._id_to_rmdx8_motor.values())[self._pub_index].publishData()
+        self.get_logger().info("FINISH PUB")
+        self._pub_index += 1
+        self._pub_index %= len(self._id_to_rmdx8_motor)
+
     def shutdownMotors(self) -> None:
         """
         Shutdown all motors
