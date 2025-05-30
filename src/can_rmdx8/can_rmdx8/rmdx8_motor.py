@@ -15,6 +15,7 @@ from rclpy.publisher import Publisher
 from rclpy.subscription import Subscription
 from std_msgs.msg import String
 
+from lib.color_codes import ColorCodes, colorStr
 from lib.configs import RMDx8MotorConfig
 from lib.motor_state.rmd_motor_state import RMDX8MotorState, RMDX8RunSettings
 
@@ -166,6 +167,13 @@ class RMDx8Motor:
                 self.motor.getMotorPower(),
                 self.motor.getAcceleration(),
             )
+            if state.error_code != 0:
+                self.motor.shutdownMotor()
+                self._ros_node.get_logger().error(
+                    colorStr(
+                        "RMDx8 Motor Error State: " + str(state.error_code), ColorCodes.FAIL_RED
+                    )
+                )
         self._publisher.publish(state.toMsg())
 
     def stopMotor(self) -> None:
