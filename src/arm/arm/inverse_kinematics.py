@@ -169,14 +169,16 @@ class InverseKinematics:
             return
 
         self._ros_node.get_logger().info(
-            f"target: {self.target.t}\nturntable: {sol.q[0]}" + f"\nshoulder: {sol.q[1]}"
+            f"target: {self.target.t}\nturntable: {sol.q[0]}\nshoulder: {sol.q[1]}\nelbow: {sol.q[2]}"
         )
 
         # Make motors move to the positions that were found
         # self._interface.runMotorPosition(MotorConfigs.ARM_TURNTABLE_MOTOR, sol.q[0])
-        self._interface.runMotorPosition(MotorConfigs.ARM_SHOULDER_MOTOR, -sol.q[1])
+        # self._interface.runMotorPosition(MotorConfigs.ARM_SHOULDER_MOTOR, -sol.q[1])
         self._arm_interface.setShoulderTargetPosition(-sol.q[1])
-        self._interface.runMotorPosition(MotorConfigs.ARM_ELBOW_MOTOR, sol.q[2])
+        self._interface.runMotorPosition(
+            MotorConfigs.ARM_ELBOW_MOTOR, ((-sol.q[2] / 6.28) - 0.1) / 5
+        )
 
     def stopAllMotors(self) -> None:
         """

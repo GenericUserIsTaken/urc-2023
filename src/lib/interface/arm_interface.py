@@ -164,7 +164,7 @@ class ArmInterface:
         if self.shoulder_moving_to_position and self.shoulder_position:
             self.calc_shoulder_feedforward()
 
-            if math.abs(self.shoulder_current_pos - self.shoulder_target_position) > 0.05:
+            if abs(self.shoulder_current_pos - self.shoulder_target_position) > 0.05:
                 self._interface.runMotor(
                     MotorConfigs.ARM_SHOULDER_MOTOR,
                     MoteusRunSettings(
@@ -174,6 +174,7 @@ class ArmInterface:
                     ),
                 )
             else:
+                self._ros_node.get_logger().info("ELSELELSELSELSE")
                 self.stopShoulder()
                 self.shoulder_moving_to_position = False
                 self.shoulder_position = False

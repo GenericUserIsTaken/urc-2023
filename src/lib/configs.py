@@ -144,6 +144,7 @@ class MotorConfigs:
             "servopos.position_max": 0.03,
             "servo.max_velocity": 0.1,
             "servo.default_velocity_limit": 0.1,
+            "servo.max_current_A": 15,
         },
     )
     ARM_ELBOW_MOTOR = MoteusMotorConfig(
@@ -157,8 +158,8 @@ class MotorConfigs:
             "servo.default_timeout_s": 1.0,
             "servo.max_current_A": 6.0,
             "servo.max_velocity": 0.1,
-            "servopos.position_min": math.nan,
-            "servopos.position_max": math.nan,
+            "servopos.position_min": -0.02,
+            "servopos.position_max": 0.075,
         },
     )
     ARM_LEFT_WRIST_MOTOR = MoteusMotorConfig(can_id=3, config={})
