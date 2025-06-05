@@ -1,15 +1,15 @@
-import sys
 import math
-import numpy as np
-import cv2  # pylint: disable=no-member
-from cv2 import aruco
+import sys
 from typing import Optional
 
+import cv2  # pylint: disable=no-member
+import numpy as np
 import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo
-from std_msgs.msg import Bool, Float32MultiArray
+from cv2 import aruco
 from cv_bridge import CvBridge
+from rclpy.node import Node
+from sensor_msgs.msg import CameraInfo, Image
+from std_msgs.msg import Bool, Float32MultiArray
 
 # Install: pip install "ultralytics>=8.1.0" "torch>=1.8"
 from ultralytics import YOLO
@@ -45,6 +45,10 @@ class SensorProcessingNode(Node):
         )
         self.camera_info_sub = self.create_subscription(
             CameraInfo, "/zed/zed_node/rgb/camera_info", self.processCameraInfo, 10
+        )
+
+        self.depth_sub = self.create_subscription(
+            Image, "/zed/zed_node/depth/depth_registered", self.depthCallBack, 10
         )
 
         # Object Detection with YOLO World
@@ -103,6 +107,48 @@ class SensorProcessingNode(Node):
         disp = cv2.resize(frame, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LINEAR)
         cv2.imshow("YOLO World Detection", disp)
         cv2.waitKey(1)
+
+    # --------------------------------------------------------------------------
+    #   Depth Processing
+    # --------------------------------------------------------------------------
+    def depthCallBack(self, msg: Image) -> None:
+        """
+        Processes depth data to ignore obstacles like wheels and ground.
+        """
+        try:
+            depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1")
+            height, width = depth_image.shape
+            valid_depths = depth_image[depth_image > 0]  # Filter out invalid depth values
+
+            if len(valid_depths) > 0:
+                self.get_logger().warning("No valid depth values found in the image.")
+                min_depth = np.min(valid_depths)
+                max_depth = np.max(valid_depths)
+                mean_depth = np.mean(valid_depths)
+
+                # Get depth at center of image
+                center_depth = depth_image[height // 2, width // 2]
+
+                # Print depth information
+                self.get_logger().info(
+                    f"Depth Stats - Min: {min_depth:.2f}m, Max: {max_depth:.2f}m, "
+                    f"Mean: {mean_depth:.2f}m, Center: {center_depth:.2f}m"
+                )
+
+                # Print a small sample of depth values around center
+                sample_region = depth_image[
+                    height // 2 - 2 : height // 2 + 3, width // 2 - 2 : width // 2 + 3
+                ]
+                self.get_logger().info(f"5x5 Center Sample (meters):\n{sample_region}")
+            else:
+                self.get_logger().warning("No valid depth values found in the image.")
+                return
+        except Exception as e:
+            self.get_logger().error(f"Failed to process depth image: {e}")
+            return
+
+        # Convert depth image to meters
+        depth_image_meters = depth_image * 0.001
 
     # --------------------------------------------------------------------------
     #   ArUco Marker Detection
