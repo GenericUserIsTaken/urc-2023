@@ -1,4 +1,5 @@
 import math
+import struct
 import sys
 from typing import Optional
 
@@ -193,6 +194,24 @@ class SensorProcessingNode(Node):
                 self.get_logger().info(
                     f"  - Center: ({mean_vals[0]:.2f}, {mean_vals[1]:.2f}, {mean_vals[2]:.2f})"
                 )
+                sample_points = valid_points[:10]
+                self.get_logger().info("Sample points (X, Y, Z):")
+                for i, point in enumerate(sample_points):
+                    self.get_logger().info(
+                        f"  Point {i}: ({point[0]:.3f}, {point[1]:.3f}, {point[2]:.3f})"
+                    )
+
+                # Print points in different distance ranges
+                distances = np.sqrt(np.sum(valid_points**2, axis=1))
+                close_points = valid_points[distances < 1.0]  # Within 1 meter
+                medium_points = valid_points[(distances >= 1.0) & (distances < 3.0)]  # 1-3 meters
+                far_points = valid_points[distances >= 3.0]  # Beyond 3 meters
+
+                self.get_logger().info(f"Distance distribution:")
+                self.get_logger().info(f"  - Close (<1m): {len(close_points)} points")
+                self.get_logger().info(f"  - Medium (1-3m): {len(medium_points)} points")
+                self.get_logger().info(f"  - Far (>3m): {len(far_points)} points")
+
         except Exception as e:
             self.get_logger().error(f"Failed to process point cloud: {e}")
 
@@ -208,7 +227,7 @@ class SensorProcessingNode(Node):
                 y = self.get_field_value(cloud_msg, offset, "y")
                 z = self.get_field_value(cloud_msg, offset, "z")
                 points.append((x, y, z))
-        return point
+        return points
 
     # --------------------------------------------------------------------------
     #   ArUco Marker Detection
