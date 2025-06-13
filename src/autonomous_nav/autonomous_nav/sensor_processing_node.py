@@ -8,7 +8,7 @@ import rclpy
 from cv2 import aruco
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from std_msgs.msg import Bool, Float32MultiArray
 
 # Install: pip install "ultralytics>=8.1.0" "torch>=1.8"
@@ -49,6 +49,10 @@ class SensorProcessingNode(Node):
 
         self.depth_sub = self.create_subscription(
             Image, "/zed/zed_node/depth/depth_registered", self.depthCallBack, 10
+        )
+
+        self.cloud_sub = self.create_subscription(
+            PointCloud2, "/zed/zed_node/point_cloud/cloud_registered", self.cloudCallBack, 10
         )
 
         # # Object Detection with YOLO World
@@ -121,7 +125,7 @@ class SensorProcessingNode(Node):
             valid_depths = depth_image[depth_image > 0]  # Filter out invalid depth values
 
             if len(valid_depths) > 0:
-                self.get_logger().warning("No valid depth values found in the image.")
+                #               self.get_logger().warning("No valid depth values found in the image.")
                 min_depth = np.min(valid_depths)
                 max_depth = np.max(valid_depths)
                 mean_depth = np.mean(valid_depths)
@@ -131,24 +135,80 @@ class SensorProcessingNode(Node):
 
                 # Print depth information
                 self.get_logger().info(
-                    f"Depth Stats - Min: {min_depth:.2f}m, Max: {max_depth:.2f}m, "
-                    f"Mean: {mean_depth:.2f}m, Center: {center_depth:.2f}m"
+                    #                   f"Depth Stats - Min: {min_depth:.2f}m, Max: {max_depth:.2f}m, "
+                    #                 f"Mean: {mean_depth:.2f}m, Center: {center_depth:.2f}m"
                 )
 
                 # Print a small sample of depth values around center
                 sample_region = depth_image[
                     height // 2 - 2 : height // 2 + 3, width // 2 - 2 : width // 2 + 3
                 ]
-                self.get_logger().info(f"5x5 Center Sample (meters):\n{sample_region}")
+            #             self.get_logger().info(f"5x5 Center Sample (meters):\n{sample_region}")
             else:
-                self.get_logger().warning("No valid depth values found in the image.")
+                #             self.get_logger().warning("No valid depth values found in the image.")
                 return
         except Exception as e:
-            self.get_logger().error(f"Failed to process depth image: {e}")
+            #         self.get_logger().error(f"Failed to process depth image: {e}")
             return
 
         # Convert depth image to meters
         depth_image_meters = depth_image * 0.001
+
+    # --------------------------------------------------------------------------
+    #   Point Cloud Processing
+    # --------------------------------------------------------------------------
+
+    def get_field_value(self, cloud_msg: PointCloud2, offset: int, field_name: str) -> float:
+        """Extract a field value from point cloud data at given offset"""
+        for field in cloud_msg.fields:
+            if field.name == field_name:
+                # Assuming float32 data type (4 bytes)
+                if field.datatype == 7:  # FLOAT32
+                    value = struct.unpack_from("f", cloud_msg.data, offset + field.offset)[0]
+                    return value
+        return float("nan")
+
+    def cloudCallBack(self, msg: PointCloud2) -> None:
+        try:
+            self.get_logger().info(f"Point cloud received:")
+            self.get_logger().info(f"  - Width: {msg.width}, Height: {msg.height}")
+            self.get_logger().info(f"  - Points: {msg.width * msg.height}")
+            self.get_logger().info(f"  - Fields: {[field.name for field in msg.fields]}")
+            points = self.extract_points_from_cloud(msg)
+
+            valid_points = points[~np.isnan(points).any(axis=1)]  # Filter out NaN points
+            valid_points = valid_points[
+                np.isfinite(valid_points).all(axis=1)
+            ]  # Filter out infinite points
+
+            if len(valid_points) > 0:
+                self.get_logger().info(f"Valid points extracted: {len(valid_points)}")
+                min_vals = np.min(valid_points, axis=0)
+                max_vals = np.max(valid_points, axis=0)
+                mean_vals = np.mean(valid_points, axis=0)
+                self.get_logger().info(f"Point cloud statistics:")
+                self.get_logger().info(f"  - X range: {min_vals[0]:.2f} to {max_vals[0]:.2f}m")
+                self.get_logger().info(f"  - Y range: {min_vals[1]:.2f} to {max_vals[1]:.2f}m")
+                self.get_logger().info(f"  - Z range: {min_vals[2]:.2f} to {max_vals[2]:.2f}m")
+                self.get_logger().info(
+                    f"  - Center: ({mean_vals[0]:.2f}, {mean_vals[1]:.2f}, {mean_vals[2]:.2f})"
+                )
+        except Exception as e:
+            self.get_logger().error(f"Failed to process point cloud: {e}")
+
+    def extract_points_from_cloud(self, cloud_msg: PointCloud2) -> list[tuple[float, float, float]]:
+        point_step = cloud_msg.point_step
+        row_step = cloud_msg.row_step
+        points = []
+
+        for i in range(cloud_msg.height):
+            for j in range(cloud_msg.width):
+                offset = i * row_step + j * point_step
+                x = self.get_field_value(cloud_msg, offset, "x")
+                y = self.get_field_value(cloud_msg, offset, "y")
+                z = self.get_field_value(cloud_msg, offset, "z")
+                points.append((x, y, z))
+        return point
 
     # --------------------------------------------------------------------------
     #   ArUco Marker Detection
