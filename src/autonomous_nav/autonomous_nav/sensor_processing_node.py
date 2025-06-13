@@ -215,7 +215,7 @@ class SensorProcessingNode(Node):
         except Exception as e:
             self.get_logger().error(f"Failed to process point cloud: {e}")
 
-    def extract_points_from_cloud(self, cloud_msg: PointCloud2) -> list[tuple[float, float, float]]:
+    def extract_points_from_cloud(self, cloud_msg: PointCloud2) -> np.ndarray:
         point_step = cloud_msg.point_step
         row_step = cloud_msg.row_step
         points = []
@@ -227,7 +227,7 @@ class SensorProcessingNode(Node):
                 y = self.get_field_value(cloud_msg, offset, "y")
                 z = self.get_field_value(cloud_msg, offset, "z")
                 points.append((x, y, z))
-        return points
+        return np.array(points)
 
     # --------------------------------------------------------------------------
     #   ArUco Marker Detection
