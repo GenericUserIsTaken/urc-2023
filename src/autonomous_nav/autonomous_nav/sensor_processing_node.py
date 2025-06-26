@@ -161,13 +161,22 @@ class SensorProcessingNode(Node):
 
     def get_field_value(self, cloud_msg: PointCloud2, offset: int, field_name: str) -> float:
         """Extract a field value from point cloud data at given offset"""
-        for field in cloud_msg.fields:
-            if field.name == field_name:
-                # Assuming float32 data type (4 bytes)
-                if field.datatype == 7:  # FLOAT32
-                    value = struct.unpack_from("f", cloud_msg.data, offset + field.offset)[0]
-                    return value
-        return float("nan")
+        try:
+            for field in cloud_msg.fields:
+                if field.name == field_name:
+                    # Check if offset is within bounds
+                    field_offset = offset + field.offset
+                    if field_offset + 4 > len(cloud_msg.data):
+                        return float("nan")
+
+                    # Assuming float32 data type (4 bytes)
+                    if field.datatype == 7:  # FLOAT32
+                        value = struct.unpack_from("f", cloud_msg.data, field_offset)[0]
+                        return value
+            return float("nan")
+        except (struct.error, IndexError, ValueError) as e:
+            # Return NaN if there's any error in unpacking
+            return float("nan")
 
     def cloudCallBack(self, msg: PointCloud2) -> None:
         try:
@@ -176,19 +185,17 @@ class SensorProcessingNode(Node):
             self.get_logger().info(f"  - Points: {msg.width * msg.height}")
             self.get_logger().info(f"  - Fields: {[field.name for field in msg.fields]}")
 
-            # Extract points - this already returns a numpy array
+            # Extract points
             points = self.extract_points_from_cloud(msg)
 
-            self.get_logger().info(f"Extracted points shape: {points.shape}")
-            self.get_logger().info(f"Points data type: {points.dtype}")
-
-            # Check for valid points more carefully
             if points.size == 0:
                 self.get_logger().warning("No points extracted from cloud")
                 return
 
+            self.get_logger().info(f"Extracted points shape: {points.shape}")
+            self.get_logger().info(f"Points data type: {points.dtype}")
+
             # Filter out NaN and infinite values
-            # First check if we have any valid finite values
             finite_mask = np.isfinite(points)
             valid_rows = np.all(finite_mask, axis=1)
             valid_points = points[valid_rows]
@@ -238,18 +245,66 @@ class SensorProcessingNode(Node):
             self.get_logger().error(f"Traceback: {traceback.format_exc()}")
 
     def extract_points_from_cloud(self, cloud_msg: PointCloud2) -> np.ndarray:
-        point_step = cloud_msg.point_step
-        row_step = cloud_msg.row_step
-        points = []
+        """Extract XYZ points from point cloud message using numpy for efficiency"""
+        try:
+            # More efficient approach using numpy
+            point_step = cloud_msg.point_step
+            row_step = cloud_msg.row_step
 
-        for i in range(cloud_msg.height):
-            for j in range(cloud_msg.width):
-                offset = i * row_step + j * point_step
-                x = self.get_field_value(cloud_msg, offset, "x")
-                y = self.get_field_value(cloud_msg, offset, "y")
-                z = self.get_field_value(cloud_msg, offset, "z")
-                points.append((x, y, z))
-        return np.array(points)
+            # Find field offsets
+            x_offset = y_offset = z_offset = None
+            for field in cloud_msg.fields:
+                if field.name == "x":
+                    x_offset = field.offset
+                elif field.name == "y":
+                    y_offset = field.offset
+                elif field.name == "z":
+                    z_offset = field.offset
+
+            if x_offset is None or y_offset is None or z_offset is None:
+                self.get_logger().error("Could not find x, y, z fields in point cloud")
+                return np.array([])
+
+            # Convert data to numpy array
+            data = np.frombuffer(cloud_msg.data, dtype=np.uint8)
+
+            # Pre-allocate points array
+            points = np.full((cloud_msg.height * cloud_msg.width, 3), np.nan)
+
+            # Extract points
+            for i in range(cloud_msg.height):
+                for j in range(cloud_msg.width):
+                    try:
+                        base_offset = i * row_step + j * point_step
+
+                        # Extract x, y, z values
+                        x_idx = base_offset + x_offset
+                        y_idx = base_offset + y_offset
+                        z_idx = base_offset + z_offset
+
+                        # Check bounds
+                        if (
+                            x_idx + 4 <= len(data)
+                            and y_idx + 4 <= len(data)
+                            and z_idx + 4 <= len(data)
+                        ):
+
+                            # Unpack float32 values
+                            x = struct.unpack_from("f", data, x_idx)[0]
+                            y = struct.unpack_from("f", data, y_idx)[0]
+                            z = struct.unpack_from("f", data, z_idx)[0]
+
+                            points[i * cloud_msg.width + j] = [x, y, z]
+
+                    except (struct.error, IndexError):
+                        # Skip invalid points
+                        continue
+
+            return points
+
+        except Exception as e:
+            self.get_logger().error(f"Error in extract_points_from_cloud: {e}")
+            return np.array([])
 
     # --------------------------------------------------------------------------
     #   ArUco Marker Detection
