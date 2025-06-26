@@ -175,18 +175,32 @@ class SensorProcessingNode(Node):
             self.get_logger().info(f"  - Width: {msg.width}, Height: {msg.height}")
             self.get_logger().info(f"  - Points: {msg.width * msg.height}")
             self.get_logger().info(f"  - Fields: {[field.name for field in msg.fields]}")
+
+            # Extract points - this already returns a numpy array
             points = self.extract_points_from_cloud(msg)
 
-            valid_points = points[~np.isnan(points).any(axis=1)]  # Filter out NaN points
-            valid_points = valid_points[
-                np.isfinite(valid_points).all(axis=1)
-            ]  # Filter out infinite points
+            self.get_logger().info(f"Extracted points shape: {points.shape}")
+            self.get_logger().info(f"Points data type: {points.dtype}")
+
+            # Check for valid points more carefully
+            if points.size == 0:
+                self.get_logger().warning("No points extracted from cloud")
+                return
+
+            # Filter out NaN and infinite values
+            # First check if we have any valid finite values
+            finite_mask = np.isfinite(points)
+            valid_rows = np.all(finite_mask, axis=1)
+            valid_points = points[valid_rows]
 
             if len(valid_points) > 0:
                 self.get_logger().info(f"Valid points extracted: {len(valid_points)}")
+
+                # Basic statistics
                 min_vals = np.min(valid_points, axis=0)
                 max_vals = np.max(valid_points, axis=0)
                 mean_vals = np.mean(valid_points, axis=0)
+
                 self.get_logger().info(f"Point cloud statistics:")
                 self.get_logger().info(f"  - X range: {min_vals[0]:.2f} to {max_vals[0]:.2f}m")
                 self.get_logger().info(f"  - Y range: {min_vals[1]:.2f} to {max_vals[1]:.2f}m")
@@ -194,26 +208,34 @@ class SensorProcessingNode(Node):
                 self.get_logger().info(
                     f"  - Center: ({mean_vals[0]:.2f}, {mean_vals[1]:.2f}, {mean_vals[2]:.2f})"
                 )
-                sample_points = valid_points[:10]
+
+                # Show sample points (first 5)
+                sample_points = valid_points[:5]
                 self.get_logger().info("Sample points (X, Y, Z):")
                 for i, point in enumerate(sample_points):
                     self.get_logger().info(
                         f"  Point {i}: ({point[0]:.3f}, {point[1]:.3f}, {point[2]:.3f})"
                     )
 
-                # Print points in different distance ranges
+                # Distance analysis
                 distances = np.sqrt(np.sum(valid_points**2, axis=1))
-                close_points = valid_points[distances < 1.0]  # Within 1 meter
-                medium_points = valid_points[(distances >= 1.0) & (distances < 3.0)]  # 1-3 meters
-                far_points = valid_points[distances >= 3.0]  # Beyond 3 meters
+                close_points = np.sum(distances < 1.0)
+                medium_points = np.sum((distances >= 1.0) & (distances < 3.0))
+                far_points = np.sum(distances >= 3.0)
 
                 self.get_logger().info(f"Distance distribution:")
-                self.get_logger().info(f"  - Close (<1m): {len(close_points)} points")
-                self.get_logger().info(f"  - Medium (1-3m): {len(medium_points)} points")
-                self.get_logger().info(f"  - Far (>3m): {len(far_points)} points")
+                self.get_logger().info(f"  - Close (<1m): {close_points} points")
+                self.get_logger().info(f"  - Medium (1-3m): {medium_points} points")
+                self.get_logger().info(f"  - Far (>3m): {far_points} points")
+
+            else:
+                self.get_logger().warning("No valid points found after filtering")
 
         except Exception as e:
             self.get_logger().error(f"Failed to process point cloud: {e}")
+            import traceback
+
+            self.get_logger().error(f"Traceback: {traceback.format_exc()}")
 
     def extract_points_from_cloud(self, cloud_msg: PointCloud2) -> np.ndarray:
         point_step = cloud_msg.point_step
