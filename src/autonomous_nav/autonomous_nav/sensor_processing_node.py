@@ -158,26 +158,6 @@ class SensorProcessingNode(Node):
     # --------------------------------------------------------------------------
     #   Point Cloud Processing
     # --------------------------------------------------------------------------
-
-    def get_field_value(self, cloud_msg: PointCloud2, offset: int, field_name: str) -> float:
-        """Extract a field value from point cloud data at given offset"""
-        try:
-            for field in cloud_msg.fields:
-                if field.name == field_name:
-                    # Check if offset is within bounds
-                    field_offset = offset + field.offset
-                    if field_offset + 4 > len(cloud_msg.data):
-                        return float("nan")
-
-                    # Assuming float32 data type (4 bytes)
-                    if field.datatype == 7:  # FLOAT32
-                        value = struct.unpack_from("f", cloud_msg.data, field_offset)[0]
-                        return value
-            return float("nan")
-        except (struct.error, IndexError, ValueError) as e:
-            # Return NaN if there's any error in unpacking
-            return float("nan")
-
     def cloudCallBack(self, msg: PointCloud2) -> None:
         try:
             self.get_logger().info(f"Point cloud received:")
@@ -185,126 +165,96 @@ class SensorProcessingNode(Node):
             self.get_logger().info(f"  - Points: {msg.width * msg.height}")
             self.get_logger().info(f"  - Fields: {[field.name for field in msg.fields]}")
 
-            # Extract points
-            points = self.extract_points_from_cloud(msg)
+            # Simple approach - just try to process a few points
+            self.get_logger().info("Starting point extraction...")
 
-            if points.size == 0:
-                self.get_logger().warning("No points extracted from cloud")
-                return
+            # Check message structure first
+            self.get_logger().info(f"Point step: {msg.point_step}")
+            self.get_logger().info(f"Row step: {msg.row_step}")
+            self.get_logger().info(f"Data length: {len(msg.data)}")
 
-            self.get_logger().info(f"Extracted points shape: {points.shape}")
-            self.get_logger().info(f"Points data type: {points.dtype}")
-
-            # Filter out NaN and infinite values
-            finite_mask = np.isfinite(points)
-            valid_rows = np.all(finite_mask, axis=1)
-            valid_points = points[valid_rows]
-
-            if len(valid_points) > 0:
-                self.get_logger().info(f"Valid points extracted: {len(valid_points)}")
-
-                # Basic statistics
-                min_vals = np.min(valid_points, axis=0)
-                max_vals = np.max(valid_points, axis=0)
-                mean_vals = np.mean(valid_points, axis=0)
-
-                self.get_logger().info(f"Point cloud statistics:")
-                self.get_logger().info(f"  - X range: {min_vals[0]:.2f} to {max_vals[0]:.2f}m")
-                self.get_logger().info(f"  - Y range: {min_vals[1]:.2f} to {max_vals[1]:.2f}m")
-                self.get_logger().info(f"  - Z range: {min_vals[2]:.2f} to {max_vals[2]:.2f}m")
+            # Find field information
+            for field in msg.fields:
                 self.get_logger().info(
-                    f"  - Center: ({mean_vals[0]:.2f}, {mean_vals[1]:.2f}, {mean_vals[2]:.2f})"
+                    f"Field: {field.name}, Offset: {field.offset}, Datatype: {field.datatype}"
                 )
 
-                # Show sample points (first 5)
-                sample_points = valid_points[:5]
-                self.get_logger().info("Sample points (X, Y, Z):")
-                for i, point in enumerate(sample_points):
+            # Try to extract just the first few points manually
+            points = []
+            max_points = min(10, msg.width * msg.height)  # Just first 10 points
+
+            self.get_logger().info(f"Trying to extract first {max_points} points...")
+
+            for point_idx in range(max_points):
+                try:
+                    # Calculate row and column
+                    row = point_idx // msg.width
+                    col = point_idx % msg.width
+
+                    # Calculate offset
+                    offset = row * msg.row_step + col * msg.point_step
+
                     self.get_logger().info(
-                        f"  Point {i}: ({point[0]:.3f}, {point[1]:.3f}, {point[2]:.3f})"
+                        f"Point {point_idx}: row={row}, col={col}, offset={offset}"
                     )
 
-                # Distance analysis
-                distances = np.sqrt(np.sum(valid_points**2, axis=1))
-                close_points = np.sum(distances < 1.0)
-                medium_points = np.sum((distances >= 1.0) & (distances < 3.0))
-                far_points = np.sum(distances >= 3.0)
+                    # Try to extract x, y, z
+                    x = self.get_field_value(msg, offset, "x")
+                    y = self.get_field_value(msg, offset, "y")
+                    z = self.get_field_value(msg, offset, "z")
 
-                self.get_logger().info(f"Distance distribution:")
-                self.get_logger().info(f"  - Close (<1m): {close_points} points")
-                self.get_logger().info(f"  - Medium (1-3m): {medium_points} points")
-                self.get_logger().info(f"  - Far (>3m): {far_points} points")
+                    self.get_logger().info(f"  Extracted: x={x}, y={y}, z={z}")
 
+                    points.append([x, y, z])
+
+                except Exception as e:
+                    self.get_logger().error(f"Error extracting point {point_idx}: {e}")
+                    break
+
+            if points:
+                self.get_logger().info(f"Successfully extracted {len(points)} points")
+                points_array = np.array(points)
+                self.get_logger().info(f"Points array shape: {points_array.shape}")
+                self.get_logger().info(f"Sample points: {points_array}")
             else:
-                self.get_logger().warning("No valid points found after filtering")
+                self.get_logger().warning("No points extracted")
 
         except Exception as e:
             self.get_logger().error(f"Failed to process point cloud: {e}")
             import traceback
 
-            self.get_logger().error(f"Traceback: {traceback.format_exc()}")
+            self.get_logger().error(f"Full traceback: {traceback.format_exc()}")
 
-    def extract_points_from_cloud(self, cloud_msg: PointCloud2) -> np.ndarray:
-        """Extract XYZ points from point cloud message using numpy for efficiency"""
+    def get_field_value(self, cloud_msg: PointCloud2, offset: int, field_name: str) -> float:
+        """Extract a field value from point cloud data at given offset"""
         try:
-            # More efficient approach using numpy
-            point_step = cloud_msg.point_step
-            row_step = cloud_msg.row_step
-
-            # Find field offsets
-            x_offset = y_offset = z_offset = None
             for field in cloud_msg.fields:
-                if field.name == "x":
-                    x_offset = field.offset
-                elif field.name == "y":
-                    y_offset = field.offset
-                elif field.name == "z":
-                    z_offset = field.offset
+                if field.name == field_name:
+                    field_offset = offset + field.offset
 
-            if x_offset is None or y_offset is None or z_offset is None:
-                self.get_logger().error("Could not find x, y, z fields in point cloud")
-                return np.array([])
+                    # Check bounds
+                    if field_offset + 4 > len(cloud_msg.data):
+                        self.get_logger().warning(
+                            f"Field offset {field_offset} + 4 > data length {len(cloud_msg.data)}"
+                        )
+                        return float("nan")
 
-            # Convert data to numpy array
-            data = np.frombuffer(cloud_msg.data, dtype=np.uint8)
+                    # Extract float32
+                    if field.datatype == 7:  # FLOAT32
+                        value = struct.unpack_from("f", cloud_msg.data, field_offset)[0]
+                        return value
+                    else:
+                        self.get_logger().warning(
+                            f"Unexpected datatype {field.datatype} for field {field_name}"
+                        )
+                        return float("nan")
 
-            # Pre-allocate points array
-            points = np.full((cloud_msg.height * cloud_msg.width, 3), np.nan)
-
-            # Extract points
-            for i in range(cloud_msg.height):
-                for j in range(cloud_msg.width):
-                    try:
-                        base_offset = i * row_step + j * point_step
-
-                        # Extract x, y, z values
-                        x_idx = base_offset + x_offset
-                        y_idx = base_offset + y_offset
-                        z_idx = base_offset + z_offset
-
-                        # Check bounds
-                        if (
-                            x_idx + 4 <= len(data)
-                            and y_idx + 4 <= len(data)
-                            and z_idx + 4 <= len(data)
-                        ):
-
-                            # Unpack float32 values
-                            x = struct.unpack_from("f", data, x_idx)[0]
-                            y = struct.unpack_from("f", data, y_idx)[0]
-                            z = struct.unpack_from("f", data, z_idx)[0]
-
-                            points[i * cloud_msg.width + j] = [x, y, z]
-
-                    except (struct.error, IndexError):
-                        # Skip invalid points
-                        continue
-
-            return points
+            self.get_logger().warning(f"Field {field_name} not found")
+            return float("nan")
 
         except Exception as e:
-            self.get_logger().error(f"Error in extract_points_from_cloud: {e}")
-            return np.array([])
+            self.get_logger().error(f"Error in get_field_value for {field_name}: {e}")
+            return float("nan")
 
     # --------------------------------------------------------------------------
     #   ArUco Marker Detection
