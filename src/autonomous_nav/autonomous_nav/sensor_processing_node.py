@@ -160,101 +160,239 @@ class SensorProcessingNode(Node):
     # --------------------------------------------------------------------------
     def cloudCallBack(self, msg: PointCloud2) -> None:
         try:
-            self.get_logger().info(f"Point cloud received:")
-            self.get_logger().info(f"  - Width: {msg.width}, Height: {msg.height}")
-            self.get_logger().info(f"  - Points: {msg.width * msg.height}")
-            self.get_logger().info(f"  - Fields: {[field.name for field in msg.fields]}")
+            # limit the processing to every 30th frame
+            self.cloud_frame_count += 1
+            if self.cloud_frame_count % 30 != 0:
+                return
+            self.get_logger().info(f"Processing full point cloud:")
+            self.get_logger().info(f"  - Resolution: {msg.width}x{msg.height}")
+            self.get_logger().info(f"  - Total points: {msg.width * msg.height}")
 
-            # Simple approach - just try to process a few points
-            self.get_logger().info("Starting point extraction...")
+            points = self.extract_all_points(msg)
 
-            # Check message structure first
-            self.get_logger().info(f"Point step: {msg.point_step}")
-            self.get_logger().info(f"Row step: {msg.row_step}")
-            self.get_logger().info(f"Data length: {len(msg.data)}")
+            # if no points were extracted, log a warning
+            if points.size == 0:
+                self.get_logger().warning("No points extracted from cloud")
+                return
 
-            # Find field information
-            for field in msg.fields:
+            self.get_logger().info(f"Extracted points shape: {points.shape}")
+            # filter invalid points
+            finite_mask = np.isfinite(points)
+            valid_rows = np.all(finite_mask, axis=1)
+
+            valid_depth_mask = points[:, 2] > 0.1  # Filter out points with depth <= 0.1m
+
+            combined_mask = valid_rows & valid_depth_mask
+            valid_points = points[combined_mask]
+
+            if len(valid_points) == 0:
                 self.get_logger().info(
-                    f"Field: {field.name}, Offset: {field.offset}, Datatype: {field.datatype}"
+                    f"Valid points: {len(valid_points)} out of {len(points)} ({len(valid_points)/len(points)*100:.1f}%)"
                 )
-
-            # Try to extract just the first few points manually
-            points = []
-            max_points = min(10, msg.width * msg.height)  # Just first 10 points
-
-            self.get_logger().info(f"Trying to extract first {max_points} points...")
-
-            for point_idx in range(max_points):
-                try:
-                    # Calculate row and column
-                    row = point_idx // msg.width
-                    col = point_idx % msg.width
-
-                    # Calculate offset
-                    offset = row * msg.row_step + col * msg.point_step
-
-                    self.get_logger().info(
-                        f"Point {point_idx}: row={row}, col={col}, offset={offset}"
-                    )
-
-                    # Try to extract x, y, z
-                    x = self.get_field_value(msg, offset, "x")
-                    y = self.get_field_value(msg, offset, "y")
-                    z = self.get_field_value(msg, offset, "z")
-
-                    self.get_logger().info(f"  Extracted: x={x}, y={y}, z={z}")
-
-                    points.append([x, y, z])
-
-                except Exception as e:
-                    self.get_logger().error(f"Error extracting point {point_idx}: {e}")
-                    break
-
-            if points:
-                self.get_logger().info(f"Successfully extracted {len(points)} points")
-                points_array = np.array(points)
-                self.get_logger().info(f"Points array shape: {points_array.shape}")
-                self.get_logger().info(f"Sample points: {points_array}")
-            else:
-                self.get_logger().warning("No points extracted")
-
+                self.analyze_full_point_cloud(points)
         except Exception as e:
             self.get_logger().error(f"Failed to process point cloud: {e}")
             import traceback
 
             self.get_logger().error(f"Full traceback: {traceback.format_exc()}")
 
-    def get_field_value(self, cloud_msg: PointCloud2, offset: int, field_name: str) -> float:
-        """Extract a field value from point cloud data at given offset"""
+    def extract_all_points(self, cloud_msg: PointCloud2) -> np.ndarray:
+        """Extract all points from PointCloud2 message"""
         try:
+            x_offset = y_offset = z_offset = 0
             for field in cloud_msg.fields:
-                if field.name == field_name:
-                    field_offset = offset + field.offset
+                if field.name == "x":
+                    x_offset = field.offset
+                elif field.name == "y":
+                    y_offset = field.offset
+                elif field.name == "z":
+                    z_offset = field.offset
+            if x_offset is None or y_offset is None or z_offset is None:
+                self.get_logger().warning("PointCloud2 does not contain x, y, z fields")
+                return np.array([])
+            data = cloud_msg.data
 
-                    # Check bounds
-                    if field_offset + 4 > len(cloud_msg.data):
-                        self.get_logger().warning(
-                            f"Field offset {field_offset} + 4 > data length {len(cloud_msg.data)}"
-                        )
-                        return float("nan")
+            total_points = cloud_msg.width * cloud_msg.height
+            points = np.full((total_points, 3), np.nan, dtype=np.float32)
 
-                    # Extract float32
-                    if field.datatype == 7:  # FLOAT32
-                        value = struct.unpack_from("f", cloud_msg.data, field_offset)[0]
-                        return value
-                    else:
-                        self.get_logger().warning(
-                            f"Unexpected datatype {field.datatype} for field {field_name}"
-                        )
-                        return float("nan")
+            self.get_logger().info(f"Extracting {total_points} points from PointCloud2")
 
-            self.get_logger().warning(f"Field {field_name} not found")
-            return float("nan")
+            point_step = cloud_msg.point_step
+            row_step = cloud_msg.row_step
 
+            valid_count = 0
+            for i in range(cloud_msg.height):
+                for j in range(cloud_msg.width):
+                    try:
+                        point_index = i * cloud_msg.width + j
+                        base_offset = i * row_step + j * point_step
+
+                        # extract x, y, z
+                        x_index = base_offset + x_offset
+                        y_index = base_offset + y_offset
+                        z_index = base_offset + z_offset
+
+                        if (
+                            x_index + 4 <= len(data)
+                            and y_index + 4 <= len(data)
+                            and z_index + 4 <= len(data)
+                        ):
+                            x = struct.unpack_from("f", data, x_index)[0]
+                            y = struct.unpack_from("f", data, y_index)[0]
+                            z = struct.unpack_from("f", data, z_index)[0]
+
+                            points[point_index] = [x, y, z]
+                            valid_count += 1
+                    except struct.error as e:
+                        self.get_logger().error(f"Struct error at point index {point_index}: {e}")
+                        continue
+            self.get_logger().info(f"Extracted {valid_count} valid points out of {total_points}")
+            return points
         except Exception as e:
-            self.get_logger().error(f"Error in get_field_value for {field_name}: {e}")
-            return float("nan")
+            self.get_logger().error(f"Error extracting points: {e}")
+            return np.empty((0, 3), dtype=np.float32)
+
+    def analyze_full_point_cloud(self, points: np.ndarray) -> None:
+        """Comprehensive analysis of the full point cloud"""
+
+        # Basic statistics
+        min_vals = np.min(points, axis=0)
+        max_vals = np.max(points, axis=0)
+        mean_vals = np.mean(points, axis=0)
+
+        self.get_logger().info(f"=== FULL POINT CLOUD ANALYSIS ===")
+        self.get_logger().info(f"3D Bounds:")
+        self.get_logger().info(f"  X: {min_vals[0]:.2f} to {max_vals[0]:.2f}m (left/right)")
+        self.get_logger().info(f"  Y: {min_vals[1]:.2f} to {max_vals[1]:.2f}m (up/down)")
+        self.get_logger().info(f"  Z: {min_vals[2]:.2f} to {max_vals[2]:.2f}m (distance)")
+        self.get_logger().info(
+            f"Center of mass: ({mean_vals[0]:.2f}, {mean_vals[1]:.2f}, {mean_vals[2]:.2f})"
+        )
+
+        # Distance analysis
+        distances = np.sqrt(np.sum(points**2, axis=1))
+
+        close_mask = distances < 1.0
+        medium_mask = (distances >= 1.0) & (distances < 3.0)
+        far_mask = distances >= 3.0
+
+        close_count = np.sum(close_mask)
+        medium_count = np.sum(medium_mask)
+        far_count = np.sum(far_mask)
+
+        self.get_logger().info(f"Distance Distribution:")
+        self.get_logger().info(
+            f"  Close (<1m):   {close_count:5d} points ({close_count/len(points)*100:.1f}%)"
+        )
+        self.get_logger().info(
+            f"  Medium (1-3m): {medium_count:5d} points ({medium_count/len(points)*100:.1f}%)"
+        )
+        self.get_logger().info(
+            f"  Far (>3m):     {far_count:5d} points ({far_count/len(points)*100:.1f}%)"
+        )
+
+        # Height analysis (Y coordinate)
+        ground_level = np.percentile(points[:, 1], 75)  # Assume ground is where most points are
+
+        above_ground = points[points[:, 1] < ground_level - 0.3]  # 30cm above ground
+        ground_points = points[np.abs(points[:, 1] - ground_level) < 0.3]  # Near ground level
+        below_ground = points[points[:, 1] > ground_level + 0.3]  # Below ground level
+
+        self.get_logger().info(f"Height Analysis (ground level ≈ {ground_level:.2f}m):")
+        self.get_logger().info(f"  Above ground: {len(above_ground):5d} points (obstacles)")
+        self.get_logger().info(f"  Ground level: {len(ground_points):5d} points")
+        self.get_logger().info(f"  Below ground: {len(below_ground):5d} points")
+
+        # Obstacle detection for navigation
+        self.detect_navigation_obstacles(points)
+
+        # Spatial density analysis
+        self.analyze_spatial_density(points)
+
+    def detect_navigation_obstacles(self, points: np.ndarray) -> None:
+        """Detect obstacles relevant for robot navigation"""
+
+        # Focus on points in front of the robot (positive Z) and at reasonable height
+        forward_points = points[points[:, 2] > 0]
+
+        if len(forward_points) == 0:
+            self.get_logger().warning("No forward-facing points detected")
+            return
+
+        # Filter by height - focus on robot-level obstacles
+        robot_height_mask = (forward_points[:, 1] > 0.5) & (
+            forward_points[:, 1] < 2.5
+        )  # 0.5m to 2.5m from camera
+        obstacle_points = forward_points[robot_height_mask]
+
+        if len(obstacle_points) > 0:
+            # Find closest obstacles
+            distances_2d = np.sqrt(
+                obstacle_points[:, 0] ** 2 + obstacle_points[:, 2] ** 2
+            )  # X-Z plane distance
+
+            close_obstacles = obstacle_points[distances_2d < 2.0]  # Within 2 meters
+
+            if len(close_obstacles) > 0:
+                closest_idx = np.argmin(distances_2d)
+                closest_obstacle = obstacle_points[closest_idx]
+                closest_distance = distances_2d[closest_idx]
+
+                self.get_logger().warn(f"=== NAVIGATION WARNING ===")
+                self.get_logger().warn(
+                    f"Obstacles detected: {len(close_obstacles)} points within 2m"
+                )
+                self.get_logger().warn(
+                    f"Closest obstacle: ({closest_obstacle[0]:.2f}, {closest_obstacle[1]:.2f}, {closest_obstacle[2]:.2f})"
+                )
+                self.get_logger().warn(f"Distance: {closest_distance:.2f}m")
+
+                # Analyze left vs right
+                left_obstacles = close_obstacles[close_obstacles[:, 0] < -0.5]
+                right_obstacles = close_obstacles[close_obstacles[:, 0] > 0.5]
+                center_obstacles = close_obstacles[np.abs(close_obstacles[:, 0]) <= 0.5]
+
+                self.get_logger().warn(f"Obstacle distribution:")
+                self.get_logger().warn(f"  Left side:   {len(left_obstacles)} obstacles")
+                self.get_logger().warn(f"  Center:      {len(center_obstacles)} obstacles")
+                self.get_logger().warn(f"  Right side:  {len(right_obstacles)} obstacles")
+
+                # Simple navigation recommendation
+                if len(center_obstacles) > 50:  # Significant obstacle ahead
+                    if len(left_obstacles) < len(right_obstacles):
+                        self.get_logger().info("NAVIGATION: Recommend turning LEFT")
+                    elif len(right_obstacles) < len(left_obstacles):
+                        self.get_logger().info("NAVIGATION: Recommend turning RIGHT")
+                    else:
+                        self.get_logger().warn("NAVIGATION: STOP - obstacles on both sides")
+                else:
+                    self.get_logger().info("NAVIGATION: Path ahead appears clear")
+            else:
+                self.get_logger().info("NAVIGATION: No close obstacles detected - path clear")
+
+    def analyze_spatial_density(self, points: np.ndarray) -> None:
+        """Analyze point density in different regions"""
+
+        # Create a simple 3D grid analysis
+        x_bins = np.linspace(np.min(points[:, 0]), np.max(points[:, 0]), 5)
+        z_bins = np.linspace(0.5, 5.0, 5)  # Focus on 0.5m to 5m forward
+
+        self.get_logger().info(f"=== SPATIAL ANALYSIS ===")
+
+        for i in range(len(z_bins) - 1):
+            z_mask = (points[:, 2] >= z_bins[i]) & (points[:, 2] < z_bins[i + 1])
+            z_points = points[z_mask]
+
+            if len(z_points) > 0:
+                left_count = np.sum(z_points[:, 0] < -0.5)
+                center_count = np.sum(np.abs(z_points[:, 0]) <= 0.5)
+                right_count = np.sum(z_points[:, 0] > 0.5)
+
+                self.get_logger().info(
+                    f"Zone {z_bins[i]:.1f}-{z_bins[i+1]:.1f}m: L={left_count:3d} C={center_count:3d} R={right_count:3d}"
+                )
+
+    # Also add this method for frame rate control
 
     # --------------------------------------------------------------------------
     #   ArUco Marker Detection
