@@ -34,6 +34,8 @@ class SensorProcessingNode(Node):
         self.camera_matrix: Optional[np.ndarray] = None
         self.dist_coeffs: Optional[np.ndarray] = None
 
+        self.cloud_frame_count = 0  # Counter for point cloud frames
+
         # ----------------------------------------------------------------------
         # Load a YOLO World model for custom object detection
         self.model = YOLO("yolov8l-world.pt")  # Use YOLO World model
