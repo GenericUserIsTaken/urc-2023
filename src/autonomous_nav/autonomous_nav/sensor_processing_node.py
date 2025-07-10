@@ -194,7 +194,7 @@ class SensorProcessingNode(Node):
             self.get_logger().info(
                 f"Filtering complete. Processing {len(valid_points)} valid points..."
             )
-            if len(valid_points) == 0:
+            if len(valid_points) > 0:
                 self.get_logger().info(
                     f"Valid points: {len(valid_points)} out of {len(points)} ({len(valid_points)/len(points)*100:.1f}%)"
                 )
