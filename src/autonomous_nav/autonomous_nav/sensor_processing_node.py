@@ -58,6 +58,10 @@ class SensorProcessingNode(Node):
             PointCloud2, "/zed/zed_node/point_cloud/cloud_registered", self.cloudCallBack, 10
         )
 
+        # ----------------------------------------------------------------------
+        # Publishers
+        self.cloud_pub = self.create_publisher(Float32MultiArray, "/processed_cloud", 10)
+
         # # Object Detection with YOLO World
         # self.yolo_sub = self.create_subscription(
         #     Image, "/zed/zed_node/rgb/image_rect_color", self.yoloDetectionCallback, 10
@@ -179,26 +183,21 @@ class SensorProcessingNode(Node):
 
             self.get_logger().info(f"Extracted points shape: {points.shape}")
             # filter invalid points
-            self.get_logger().info("Checking for finite values...")
             finite_mask = np.isfinite(points)
-            self.get_logger().info("Checking all rows are finite...")
             valid_rows = np.all(finite_mask, axis=1)
 
-            self.get_logger().info("Checking depth values...")
             valid_depth_mask = points[:, 2] > 0.1  # Filter out points with depth <= 0.1m
 
-            self.get_logger().info("Combining masks...")
             combined_mask = valid_rows & valid_depth_mask
             valid_points = points[combined_mask]
 
-            self.get_logger().info(
-                f"Filtering complete. Processing {len(valid_points)} valid points..."
-            )
-            if len(valid_points) > 0:
+            if len(valid_points) == 0:
                 self.get_logger().info(
                     f"Valid points: {len(valid_points)} out of {len(points)} ({len(valid_points)/len(points)*100:.1f}%)"
                 )
                 self.analyze_full_point_cloud(points)
+                # PUBLISHING POINTS HERE
+                self.cloud_pub.publish(points)
         except Exception as e:
             self.get_logger().error(f"Failed to process point cloud: {e}")
             import traceback
@@ -222,7 +221,9 @@ class SensorProcessingNode(Node):
             data = cloud_msg.data
 
             total_points = cloud_msg.width * cloud_msg.height
-            points = np.full((total_points, 3), np.nan, dtype=np.float32)
+            points = np.full(
+                (total_points, 3), np.nan, dtype=np.float32
+            )  # this creates a 1-D array of Tuples(x,y,z)
 
             self.get_logger().info(f"Extracting {total_points} points from PointCloud2")
 
