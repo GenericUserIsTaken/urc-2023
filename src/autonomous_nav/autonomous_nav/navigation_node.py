@@ -1,15 +1,14 @@
-import sys
 import math
+import sys
+from typing import Optional, Tuple
 
 import rclpy
-from rclpy.node import Node
-from rclpy.executors import ExternalShutdownException
-
-from sensor_msgs.msg import NavSatFix
-from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Pose2D
-from std_msgs.msg import String, Float64MultiArray
-from typing import Optional, Tuple
+from nav_msgs.msg import Odometry
+from rclpy.executors import ExternalShutdownException
+from rclpy.node import Node
+from sensor_msgs.msg import NavSatFix
+from std_msgs.msg import Bool, Float32MultiArray, Float64MultiArray, String
 
 from lib.color_codes import ColorCodes, colorStr
 
@@ -24,6 +23,10 @@ class NavigationNode(Node):
         - Subscribes to /goal_latlon (NavSatFix) for a new lat/lon waypoint.
         - Subscribes to /odometry/filtered (Odometry) for current pose.
         - Publishes /navigation_status (String) and /navigation_feedback (Pose2D).
+
+    TODO:
+        -Create a funcion that points the rover at a given gps coordinate
+        -Create a function that
     """
 
     def __init__(self) -> None:
@@ -57,6 +60,7 @@ class NavigationNode(Node):
             Odometry, "/odometry/filtered", self.odomCallback, 10
         )
 
+        self.could_sub = self.create_subscription(Float32MultiArray, "/processed_cloud", 10)
         # ---- Publishers ----
         self.status_pub = self.create_publisher(String, "/navigation_status", 10)
         self.feedback_pub = self.create_publisher(Pose2D, "/navigation_feedback", 10)
