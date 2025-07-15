@@ -26,7 +26,7 @@ class NavigationNode(Node):
 
     TODO:
         -Create a funcion that points the rover at a given gps coordinate
-        -Create a function that
+
     """
 
     def __init__(self) -> None:
@@ -41,6 +41,9 @@ class NavigationNode(Node):
         self.ref_lat = 0.0
         self.ref_lon = 0.0
         self.ref_alt = 0.0
+        self.start_lat = 0.0
+        self.start_lon = 0.0
+        self.start_alt = 0.0
 
         # ---- Internal State ----
         self.active_waypoint: Optional[Tuple[float, float]] = None
@@ -48,6 +51,7 @@ class NavigationNode(Node):
         self.current_yaw = 0.0
 
         # ---- Subscribers ----
+        # latitude, longitude, altitude
         self.anchor_sub = self.create_subscription(
             Float64MultiArray, "/anchor_position", self.anchorCallback, 10
         )
@@ -59,7 +63,7 @@ class NavigationNode(Node):
         self.odom_sub = self.create_subscription(
             Odometry, "/odometry/filtered", self.odomCallback, 10
         )
-
+        # point ckoud data from the data processing node
         self.could_sub = self.create_subscription(Float32MultiArray, "/processed_cloud", 10)
         # ---- Publishers ----
         self.status_pub = self.create_publisher(String, "/navigation_status", 10)
@@ -154,6 +158,16 @@ class NavigationNode(Node):
 
         self.publishStatus(f"En route to waypoint ({goal_x:.2f}, {goal_y:.2f})")
         self.publishFeedback(goal_x, goal_y)
+
+    def turnTowardGoal(self, goal_Location: Tuple[float, float]) -> None:
+        a = self.distance_2d(
+            self.current_position[0], self.current_position[1], goal_Location[0], goal_Location[1]
+        )
+        b = self.distance_2d(goal_Location[0], goal_Location[1], self.start_lat, self.start_lon)
+        c = self.distance_2d(goal_Location[0], goal_Location[1], self.start_lat, self.start_lon)
+        temp = (a**2 - c**2 - b**2) / (-2 * b * c)
+        turn_angle = math.degrees(math.acos(temp))
+        # turn left or right that number of degrees
 
     # ----------------------
     #   Publishing Helpers
