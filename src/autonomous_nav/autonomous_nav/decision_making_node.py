@@ -8,16 +8,15 @@ Functionality:
     - Publishes commands to the drivebase to move or stop.
 """
 
-import sys
 import math
+import sys
 from typing import Optional
 
 import rclpy
+from geometry_msgs.msg import Pose2D
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-
-from geometry_msgs.msg import Pose2D
-from std_msgs.msg import String, Bool, Float32, Float32MultiArray
+from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 
 from lib.color_codes import ColorCodes, colorStr
 
@@ -61,8 +60,12 @@ class DecisionMakingNode(Node):
         # ---- Subscribers ----
         self.create_subscription(Bool, "/obstacle_detected", self.obstacleCallback, 10)
         self.create_subscription(Float32MultiArray, "/obstacle_info", self.obstacleInfoCallback, 10)
-        self.create_subscription(String, "/navigation_status", self.navStatusCallback, 10)
-        self.create_subscription(Pose2D, "/navigation_feedback", self.navFeedbackCallback, 10)
+        self.create_subscription(
+            String, "/navigation_status", self.navStatusCallback, 10
+        )  # tells us whether we are
+        self.create_subscription(
+            Pose2D, "/navigation_feedback", self.navFeedbackCallback, 10
+        )  # gives us the angle of the rover
 
         # ---- Publishers (to Drivebase) ----
         self.left_drive_pub = self.create_publisher(Float32, "move_left_drivebase_side_message", 10)

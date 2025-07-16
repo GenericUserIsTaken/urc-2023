@@ -167,6 +167,8 @@ class NavigationNode(Node):
         c = self.distance_2d(goal_Location[0], goal_Location[1], self.start_lat, self.start_lon)
         temp = (a**2 - c**2 - b**2) / (-2 * b * c)
         turn_angle = math.degrees(math.acos(temp))
+        # read from current pose and anchor position
+        # do the same calculation using measurmentts relative to the anchor
         # turn left or right that number of degrees
 
     # ----------------------
