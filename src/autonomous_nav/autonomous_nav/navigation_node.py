@@ -1,6 +1,8 @@
 import sys
 import math
 
+from typing import Optional, Tuple
+
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
@@ -9,7 +11,7 @@ from sensor_msgs.msg import NavSatFix
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Pose2D
 from std_msgs.msg import String, Float64MultiArray
-from typing import Optional, Tuple
+from sensor_msgs.msg import  PointCloud2
 
 from lib.color_codes import ColorCodes, colorStr
 
@@ -60,6 +62,9 @@ class NavigationNode(Node):
         # ---- Publishers ----
         self.status_pub = self.create_publisher(String, "/navigation_status", 10)
         self.feedback_pub = self.create_publisher(Pose2D, "/navigation_feedback", 10)
+        self.obstacle_pointcloud_pub = self.create_publisher(
+            PointCloud2, "/obstacle_goal_pointcloud", 10
+        )
 
         # ---- Timers ----
         self.timer = self.create_timer(0.1, self.updateNavigation)  # 10 Hz

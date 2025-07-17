@@ -55,6 +55,12 @@ class SensorProcessingNode(Node):
         self.cloud_sub = self.create_subscription(
             PointCloud2, "/zed/zed_node/point_cloud/cloud_registered", self.cloudCallBack, 10
         )
+        
+        # ------------------------------------------------------------------------------
+        # Publishers
+        self.raw_pointcloud_pub = self.create_publisher(
+            PointCloud2, "/raw_pointcloud", 10
+        )
 
         # # Object Detection with YOLO World
         # self.yolo_sub = self.create_subscription(

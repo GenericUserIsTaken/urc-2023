@@ -22,6 +22,7 @@ from typing import Optional
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from sensor_msgs.msg import  PointCloud2
 
 from geometry_msgs.msg import Pose2D
 from std_msgs.msg import String, Bool, Float32, Float32MultiArray
@@ -55,7 +56,8 @@ class DecisionMakingNode(Node):
 
         # ---- State Variables ----
         self.obstacle_detected: bool = False
-        self.obstacle_info: list[float] = []  # Mypy: typed list of floats
+        self.obstacle_pointcloud: list[float] = []  # Mypy: typed list of floats
+        self.raw_obstacle_pointcloud: list[float] = [] # Mypy: typed list of floats directly from sensor
 
         self.navigation_status: str = "No waypoint provided; Navigation Stopped."
         self.nav_feedback = Pose2D()
@@ -67,7 +69,8 @@ class DecisionMakingNode(Node):
 
         # ---- Subscribers ----
         self.create_subscription(Bool, "/obstacle_detected", self.obstacleCallback, 10)
-        self.create_subscription(Float32MultiArray, "/obstacle_info", self.obstacleInfoCallback, 10)
+        self.create_subscription(PointCloud2, "/obstacle_goal_pointcloud", self.goalPointCloud, 10)
+        self.create_subscription(PointCloud2, "/raw_pointcloud", self.rawPointCloud, 10)
         self.create_subscription(String, "/navigation_status", self.navStatusCallback, 10)
         self.create_subscription(Pose2D, "/navigation_feedback", self.navFeedbackCallback, 10)
 
@@ -88,8 +91,15 @@ class DecisionMakingNode(Node):
     def obstacleCallback(self, msg: Bool) -> None:
         self.obstacle_detected = msg.data
 
-    def obstacleInfoCallback(self, msg: Float32MultiArray) -> None:
-        self.obstacle_info = list(msg.data)
+    def obstacleGoalPointCloud(self, msg: Float32MultiArray) -> None:
+        self.obstacle_pointcloud = list(msg.data)
+        
+    def rawPointCloud(self, msg: Float32MultiArray) -> None:
+        """
+        Receives raw point cloud data from the sensor.
+        This is not used in the current logic but can be extended for more complex decision-making.
+        """
+        self.raw_obstacle_pointcloud = list(msg.data)
 
     def navStatusCallback(self, msg: String) -> None:
         self.navigation_status = msg.data
