@@ -54,13 +54,13 @@ class SensorProcessingNode(Node):
             PointCloud2, "/zed/zed_node/point_cloud/cloud_registered", self.cloudCallBack, 10
         )
 
-        self.grid_pub = self.create_publisher(OccupancyGrid, "/local_occupancy_grid", 10)
-        # Voxel grid parameters
-        self.grid_resolution = 0.1
-        self.grid_width = 100
-        self.grid_height = 100
-        self.max_height = 2.0
-        self.min_height = -0.5
+        # self.grid_pub = self.create_publisher(OccupancyGrid, "/local_occupancy_grid", 10)
+        # # Voxel grid parameters
+        # self.grid_resolution = 0.1
+        # self.grid_width = 100
+        # self.grid_height = 100
+        # self.max_height = 2.0
+        # self.min_height = -0.5
 
         self.get_logger().info("sensor_processing_node is up and running with YOLO World.")
 
