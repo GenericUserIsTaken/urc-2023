@@ -50,18 +50,15 @@ class SensorProcessingNode(Node):
             CameraInfo, "/zed/zed_node/rgb/camera_info", self.processCameraInfo, 10
         )
 
-        self.depth_sub = self.create_subscription(
-            Image, "/zed/zed_node/depth/depth_registered", self.depthCallBack, 10
-        )
-
         self.cloud_sub = self.create_subscription(
             PointCloud2, "/zed/zed_node/point_cloud/cloud_registered", self.cloudCallBack, 10
         )
-
-        # # Object Detection with YOLO World
-        # self.yolo_sub = self.create_subscription(
-        #     Image, "/zed/zed_node/rgb/image_rect_color", self.yoloDetectionCallback, 10
-        # )
+        # Voxel grid parameters
+        self.grid_resolution = 0.1
+        self.grid_width = 100
+        self.grid_height = 100
+        self.max_height = 2.0
+        self.min_height = -0.5
 
         self.get_logger().info("sensor_processing_node is up and running with YOLO World.")
 
@@ -116,48 +113,6 @@ class SensorProcessingNode(Node):
     #     cv2.waitKey(1)
 
     # --------------------------------------------------------------------------
-    #   Depth Processing
-    # --------------------------------------------------------------------------
-    def depthCallBack(self, msg: Image) -> None:
-        """
-        Processes depth data to ignore obstacles like wheels and ground.
-        """
-        try:
-            depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1")
-            height, width = depth_image.shape
-            valid_depths = depth_image[depth_image > 0]  # Filter out invalid depth values
-
-            if len(valid_depths) > 0:
-                #               self.get_logger().warning("No valid depth values found in the image.")
-                min_depth = np.min(valid_depths)
-                max_depth = np.max(valid_depths)
-                mean_depth = np.mean(valid_depths)
-
-                # Get depth at center of image
-                center_depth = depth_image[height // 2, width // 2]
-
-                # Print depth information
-                self.get_logger().info(
-                    #                   f"Depth Stats - Min: {min_depth:.2f}m, Max: {max_depth:.2f}m, "
-                    #                 f"Mean: {mean_depth:.2f}m, Center: {center_depth:.2f}m"
-                )
-
-                # Print a small sample of depth values around center
-                sample_region = depth_image[
-                    height // 2 - 2 : height // 2 + 3, width // 2 - 2 : width // 2 + 3
-                ]
-            #             self.get_logger().info(f"5x5 Center Sample (meters):\n{sample_region}")
-            else:
-                #             self.get_logger().warning("No valid depth values found in the image.")
-                return
-        except Exception as e:
-            #         self.get_logger().error(f"Failed to process depth image: {e}")
-            return
-
-        # Convert depth image to meters
-        depth_image_meters = depth_image * 0.001
-
-    # --------------------------------------------------------------------------
     #   Point Cloud Processing
     # --------------------------------------------------------------------------
     def cloudCallBack(self, msg: PointCloud2) -> None:
@@ -185,7 +140,7 @@ class SensorProcessingNode(Node):
             valid_rows = np.all(finite_mask, axis=1)
 
             self.get_logger().info("Checking depth values...")
-            valid_depth_mask = points[:, 2] > 0.1  # Filter out points with depth <= 0.1m
+            valid_depth_mask = points[:, 2] > 0.04  # Filter out points with depth <= 0.1m
 
             self.get_logger().info("Combining masks...")
             combined_mask = valid_rows & valid_depth_mask
