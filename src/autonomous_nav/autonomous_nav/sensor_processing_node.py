@@ -53,6 +53,8 @@ class SensorProcessingNode(Node):
         self.cloud_sub = self.create_subscription(
             PointCloud2, "/zed/zed_node/point_cloud/cloud_registered", self.cloudCallBack, 10
         )
+
+        self.grid_pub = self.create_publisher(OccupancyGrid, "/local_occupancy_grid", 10)
         # Voxel grid parameters
         self.grid_resolution = 0.1
         self.grid_width = 100
@@ -140,7 +142,7 @@ class SensorProcessingNode(Node):
             valid_rows = np.all(finite_mask, axis=1)
 
             self.get_logger().info("Checking depth values...")
-            valid_depth_mask = points[:, 2] > 0.04  # Filter out points with depth <= 0.1m
+            valid_depth_mask = points[:, 2] > 0.1  # Filter out points with depth <= 0.1m
 
             self.get_logger().info("Combining masks...")
             combined_mask = valid_rows & valid_depth_mask
