@@ -60,12 +60,9 @@ class DecisionMakingNode(Node):
         # ---- Subscribers ----
         self.create_subscription(Bool, "/obstacle_detected", self.obstacleCallback, 10)
         self.create_subscription(Float32MultiArray, "/obstacle_info", self.obstacleInfoCallback, 10)
-        self.create_subscription(
-            String, "/navigation_status", self.navStatusCallback, 10
-        )  # tells us whether we are
-        self.create_subscription(
-            Pose2D, "/navigation_feedback", self.navFeedbackCallback, 10
-        )  # gives us the angle of the rover
+        self.create_subscription(String, "/navigation_status", self.navStatusCallback, 10)
+        # gives us the angle and position of the rover
+        self.create_subscription(Pose2D, "/navigation_feedback", self.navFeedbackCallback, 10)
 
         # ---- Publishers (to Drivebase) ----
         self.left_drive_pub = self.create_publisher(Float32, "move_left_drivebase_side_message", 10)
