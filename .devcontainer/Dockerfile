@@ -23,10 +23,10 @@ RUN apt-get update && apt-get install -y \
   python3-rosdep \
   python3-colcon-common-extensions \
   # Install usb utilities
-  usbutils \ 
+  usbutils \
   can-utils \
   iproute2 \
-  kmod \ 
+  kmod \
   # Used for cv_bridge
   python3-numpy \
   libboost-python-dev \
@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y \
   libzed-sdk4.0 \
   # Octomap for autonomous navigation
   ros-humble-octomap \
-  ros-humble-octomap-mapping \ 
+  ros-humble-octomap-mapping \
   ros-humble-octomap-server \
   # Clean out the apt lists after `apt-get update`
   && rm -rf /var/lib/apt/lists/*
