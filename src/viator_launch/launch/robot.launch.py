@@ -103,6 +103,15 @@ navsat_transform = Node(
     parameters=[navsat_config_path],  # Load config
 )
 
+octomap_node = Node(
+    package="octomap_server2",
+    executable="octomap_server",
+    name="octomap_server",
+    output="screen",
+    remappings=[("/points", "/zed/zed_node/point_cloud/cloud_registered")],
+    parameters=[{"resolution": 0.1, "frame_id": "map"}],
+)
+
 # Path to your configuration YAML for localization ekf_node
 config_file_path = os.path.join(get_package_share_directory("autonomous_nav"), "config", "ekf.yaml")
 
@@ -142,5 +151,6 @@ def generate_launch_description() -> launch.LaunchDescription:  # pylint: disabl
             navsat_transform,
             ekf_node,
             static_tf,
+            octomap_node,
         ]
     )

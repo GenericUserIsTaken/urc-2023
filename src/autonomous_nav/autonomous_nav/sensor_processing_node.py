@@ -6,6 +6,7 @@ from typing import Optional
 import cv2  # pylint: disable=no-member
 import numpy as np
 import rclpy
+import sensor_msgs_py.point_cloud2 as pc2
 from cv2 import aruco
 from cv_bridge import CvBridge
 from rclpy.node import Node
@@ -13,7 +14,7 @@ from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from std_msgs.msg import Bool, Float32MultiArray
 
 # Install: pip install "ultralytics>=8.1.0" "torch>=1.8"
-from ultralytics import YOLO
+# from ultralytics import YOLO
 
 
 class SensorProcessingNode(Node):
@@ -56,6 +57,9 @@ class SensorProcessingNode(Node):
 
         self.cloud_sub = self.create_subscription(
             PointCloud2, "/zed/zed_node/point_cloud/cloud_registered", self.cloudCallBack, 10
+        )
+        self.octomap_sub = self.create_subscription(
+            PointCloud2, "/occupied_cells", self.octomapCallBack, 10
         )
 
         # ----------------------------------------------------------------------
@@ -142,8 +146,8 @@ class SensorProcessingNode(Node):
 
                 # Print depth information
                 self.get_logger().info(
-                    #                   f"Depth Stats - Min: {min_depth:.2f}m, Max: {max_depth:.2f}m, "
-                    #                 f"Mean: {mean_depth:.2f}m, Center: {center_depth:.2f}m"
+                    f"Depth Stats - Min: {min_depth:.2f}m, Max: {max_depth:.2f}m, "
+                    f"Mean: {mean_depth:.2f}m, Center: {center_depth:.2f}m"
                 )
 
                 # Print a small sample of depth values around center
@@ -160,6 +164,12 @@ class SensorProcessingNode(Node):
 
         # Convert depth image to meters
         depth_image_meters = depth_image * 0.001
+
+    # place the voxels from octomap_server into an array
+    def octomapCallBack(self, msg: PointCloud2) -> None:
+        octoPoints = pc2.read_points(msg, field_names=["x", "y", "z"], skip_nans=True)
+        octoPointList = list(octoPoints)
+        self.get_logger().info(f"Got {len(octoPointList)} occupiedVoxels")
 
     # --------------------------------------------------------------------------
     #   Point Cloud Processing
