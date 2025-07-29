@@ -165,6 +165,9 @@ class SensorProcessingNode(Node):
         # Convert depth image to meters
         depth_image_meters = depth_image * 0.001
 
+    # --------------------------------------------------------------------------
+    #   Octomap Processing
+    # --------------------------------------------------------------------------
     # place the voxels from octomap_server into an array
     def octomapCallBack(self, msg: PointCloud2) -> None:
         octoPoints = pc2.read_points(msg, field_names=["x", "y", "z"], skip_nans=True)

@@ -38,6 +38,8 @@ RUN apt-get update && apt-get install -y \
   ros-humble-octomap \
   ros-humble-octomap-mapping \
   ros-humble-octomap-server \
+  #rivz to visualize camera data
+  ros-humble-rviz2
   # Clean out the apt lists after `apt-get update`
   && rm -rf /var/lib/apt/lists/*
 
