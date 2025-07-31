@@ -31,6 +31,10 @@
   <!-- ZED wrapper and interfaces -->
   <exec_depend>zed_wrapper</exec_depend>
   <exec_depend>zed_interfaces</exec_depend>
+  <!-- Octomap Dependencies-->
+  <depend>octomap_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>geometry_msgs</depend>
 
   <!-- Localization -->
   <depend>robot_localization</depend>

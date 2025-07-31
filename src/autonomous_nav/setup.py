@@ -28,6 +28,7 @@ setup(
             "gps_anchor_node = autonomous_nav.gps_anchor_node:main",
             "decision_making_node = autonomous_nav.decision_making_node:main",
             "depth_reader_node = autonomous_nav.depth_reader_node:main",
+            "ros2_octomap_sensor_node = your_package_name.ros2_octomap_sensor_node:main",
         ],
     },
 )
