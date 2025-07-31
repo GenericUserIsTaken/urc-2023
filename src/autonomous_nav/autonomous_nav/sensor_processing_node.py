@@ -211,7 +211,7 @@ class SensorProcessingNode(Node):
                 self.get_logger().info(
                     f"Valid points: {len(valid_points)} out of {len(points)} ({len(valid_points)/len(points)*100:.1f}%)"
                 )
-                self.analyze_full_point_cloud(points)
+                # self.analyze_full_point_cloud(points)
                 # PUBLISHING POINTS HERE
                 self.cloud_pub.publish(points)
         except Exception as e:
