@@ -63,6 +63,9 @@ class NavigationNode(Node):
         self.odom_sub = self.create_subscription(
             Odometry, "/odometry/filtered", self.odomCallback, 10
         )
+
+        # TODO subscribe to the cost map right here
+
         # point ckoud data from the data processing node
         self.could_sub = self.create_subscription(Float32MultiArray, "/processed_cloud", 10)
         # ---- Publishers ----

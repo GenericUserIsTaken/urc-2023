@@ -9,6 +9,7 @@ import rclpy
 import sensor_msgs_py.point_cloud2 as pc2
 from cv2 import aruco
 from cv_bridge import CvBridge
+from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from std_msgs.msg import Bool, Float32MultiArray
@@ -65,6 +66,8 @@ class SensorProcessingNode(Node):
         # ----------------------------------------------------------------------
         # Publishers
         self.cloud_pub = self.create_publisher(Float32MultiArray, "/processed_cloud", 10)
+
+        # TODO publish the cost map right here
 
         # # Object Detection with YOLO World
         # self.yolo_sub = self.create_subscription(
