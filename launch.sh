@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 
-source /opt/ros/$ROS_DISTRO/setup.bash
+
+# clear ros stuff
+unset AMENT_PREFIX_PATH
+unset CMAKE_PREFIX_PATH
+unset ROS_PACKAGE_PATH
+unset PYTHONPATH
+
+# source only from this workspace
+source /opt/ros/humble/setup.bash
 source /home/trickfire/jake-urc-2023/urc-2023/install/setup.bash
 
 #modprobe can
@@ -11,5 +19,6 @@ source /home/trickfire/jake-urc-2023/urc-2023/install/setup.bash
 
 # Add to the python import pathes. Not the best, but will work for now
 export PYTHONPATH="/home/trickfire/jake-urc-2023/urc-2023/src/:$PYTHONPATH"
+ros2 pkg prefix autonomous_nav
 
 ros2 launch viator_launch robot.launch.py   
