@@ -1,335 +1,262 @@
-"""
-Role: Serve as local path planning to navigate to a goal.
-
-Functionality:  Receives goal in float form
-                Receives obstacle list as np.ndarray[list]
-"""
-
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
-from decision_making_node import Obstacle
-from dwa_cost_calculator import DWACostCalculations
+from numpy.typing import NDArray
 
 
 class Trajectory:
-    def __init__(self, points: list[Tuple[float, float, float]]):
-        """
-        Initialize a trajectory with a list of points.
-
-        Args:
-            points: List of points representing the trajectory
-        """
-        self.points = points
-
-
-class DWA_planner:
     def __init__(
         self,
-        current_state: list,
-        goal: Tuple[float, float],
-        obstacles: list[Tuple[float, float]],
-        wheel_base: float = 0.5,
+        init_vel: Optional[Tuple[float, float]] = None,
+        points: Optional[list[Tuple[float, float]]] = None,
+        cost: Optional[int] = None,
+        velocity: Optional[Tuple[float, float]] = None,
     ):
-        self.current_state = current_state
-        self.goal = goal
-        self.obstacles = obstacles
-        self.wheel_base = wheel_base
+        self.points = points if points is not None else []
+        self.init_vel = init_vel if points is not None else 0.0, 0.0
+        self.cost = cost if cost is not None else 1000
+        self.velocity = velocity if velocity is not None else 0.0, 0.0
 
-    def plan(self, current_state: list, goal: Tuple[float, float], obstacles: np.ndarray) -> tuple:
+    def append_point(self, point: Tuple[float, float]) -> bool:
+        """Appends a point to the trajectory"""
+        if len(self.points) < 10:
+            self.points.append(point)
+            return True
+
+        return False
+
+    def set_velocity(self, velocity: Tuple[float, float]) -> None:
+        """Sets the velocity of the trajectory"""
+        self.velocity = velocity
+
+    def set_cost(self, cost: int) -> None:
+        """Sets the cost of the trajectory"""
+        self.cost = cost
+
+    def get_cost(self) -> int:
+        """Returns the cost of the trajectory"""
+        return self.cost
+
+    def is_valid(self, occupancy_grid: NDArray[np.int8]) -> bool:
         """
-        Plan a trajectory from the current state to the goal while avoiding obstacles.
+        Checks if trajectory object should be removed by checking against points in grid
+        Returns false if there is a collision.
+        """
+        total_cost: int = 0  # use python int to avoid int8 overflow during accumulation
+        for point in self.points:
+            x, y = int(point[0]), int(point[1])
+            cost: np.int8 = occupancy_grid[x, y]
+            total_cost += int(cost)
+            if cost > np.int8(100):
+                return False
+
+        self.set_cost(total_cost)
+
+        return True
+
+    def create_velocity_command(
+        self,
+        initial_pos: Tuple[float, float],
+        initial_theta: float,
+        initial_vel: Tuple[float, float],
+        target_pos: Tuple[float, float],
+        wheel_base_radius: float,
+    ) -> Tuple[float, float]:
+        """
+        Creates a velocity command (linear v, angular ω) to move from initial position and orientation towards the target position.
+        This is a simplified controller based on forward kinematics principles, using proportional control for alignment and speed.
+        Assumes differential drive; wheel_base_radius is half the wheelbase (used if converting to wheel speeds, but here we return (v, ω)).
+        Tune Kp_angular and Kp_linear as needed.
+        """
+        # Unpack inputs
+        x0, y0 = initial_pos
+        x1, y1 = target_pos
+        v_current, ω_current = initial_vel  # Can use for smoothing if desired
+
+        # Compute relative position
+        dx = x1 - x0
+        dy = y1 - y0
+        distance = math.sqrt(dx**2 + dy**2)
+
+        if distance < 0.01:  # Threshold for arrival
+            return (0.0, 0.0)  # Stop
+
+        # Desired heading
+        desired_theta = math.atan2(dy, dx)
+
+        # Angular error (normalize to -pi to pi)
+        angular_error = desired_theta - initial_theta
+        angular_error = (angular_error + math.pi) % (2 * math.pi) - math.pi
+
+        # Proportional controllers (tune these gains)
+        Kp_angular = 1.0  # For angular_velocity
+        Kp_linear = 0.5  # For v, scaled by distance
+
+        # Compute angular velocity
+        angular_velocity = Kp_angular * angular_error
+
+        # Clamp ω based on max (example limits; adjust)
+        max_angular_velocity = 1.0  # rad/s
+        angular_velocity = max(min(angular_velocity, max_angular_velocity), -max_angular_velocity)
+
+        # Compute linear velocity (reduce when turning sharply)
+        v = Kp_linear * distance * (1 - abs(angular_error) / math.pi)  # Dampen v during large turns
+
+        # Clamp v
+        max_v = 0.5  # m/s
+        v = max(min(v, max_v), 0.0)  # Assume no reverse for simplicity
+
+        # Optional: Smooth with current vel (e.g., low-pass filter)
+        alpha = 0.8  # Smoothing factor
+        v = alpha * v + (1 - alpha) * v_current
+        angular_velocity = alpha * angular_velocity + (1 - alpha) * ω_current
+
+        # Note: If you need wheel velocities instead, use:
+        # left = v - ω * wheel_base_radius
+        # right = v + ω * wheel_base_radius
+        # return (left, right)
+        # But based on signature, returning (v, ω)
+        return (v, angular_velocity)
+
+
+class DWAPlanner:
+    def __init__(
+        self,
+        occupancy_grid: list[Tuple[float, float]],
+        robot_radius: float,
+        current_velocity: Tuple[float, float],
+        current_position: Tuple[float, float],
+        time_delta: float,
+        goal: Tuple[float, float],
+        heading: float,
+    ):
+        """
+        Initialize the DWA planner with robot parameters.
 
         Args:
-            current_state: [x, y, theta, vx, vy, omega]
-            goal: [x, y] target position
-            obstacles: PointCloud2 message containing obstacle points
+            robot_radius: Radius of the robot.
+            max_speed: Maximum speed of the robot.
+            max_acceleration: Maximum acceleration of the robot.
+        """
 
-        Returns:
-            [vx, vy, omega] velocity command
+        # State Variables
+        self.occupancy_grid = occupancy_grid
+        self.robot_radius = robot_radius
+        self.current_vel = current_velocity
+        self.current_pos = current_position
+        self.time_delta = time_delta
+        self.goal = goal
+        self.current_heading = heading
+
+    def plan(self) -> Tuple[float, float]:
+        """
+        Main method for local navigation.
+
+        Uses Dynamic Window Approach logic to navigate through 2D costmap from ROS2.
 
         Code Flow:
             1. Extract current position and velcoity from current_state.
             2. Create velocity window based on current velocities.
             3. Generate possible trajectories within the velocity window.
             4. Evaluate each trajectory and remove ones with collisions.
-            5. Calculate costs for remaining trajectories.
-            6. Select the trajectory with the lowest cost.
-            7. Return velocity command that will be published in decision_processing_node.py
+            5. Return velocity command that will be published in decision_processing_node.py
         """
 
-        # Step 1: Extract current position and velocities
-        current_position = current_state[0:3]
-        current_velocity = current_state[3:6]
+        velocity_command: Tuple[float, float] = 0, 0
 
-        # Step 2: Create velocity window based on current velocities
-        velocity_window = self.get_velocity_window(current_velocity)
+        max_vel_delta: float = 5.0
+        time_delta: float = 0.1
+        max_vel: float = 15.5  # radians per second
 
-        # Step 3: Generate possible trajectories within the velocity window
-        trajectories = self.generate_trajectories(current_position, velocity_window)
+        # Generate velocity window
+        velocity_window: list[Tuple[float, float]] = self.generate_vel_window(
+            max_vel_delta, max_vel
+        )
 
-        # Step 4: Evaluate each trajectory and remove ones with collisions
-        safe_trajectories = self.remove_collisions(trajectories, obstacles)
+        # Generate trajectories based on velocity window
+        trajectories: list[Trajectory] = []
+        trajectories = self.generate_trajectories(
+            velocity_window, time_delta, self.current_heading, self.current_pos
+        )
 
-        if not safe_trajectories:
-            # If no safe trajectories, return zero velocity command
-            return 0, 0
+        # Evaluate all trajectories and determine what to remove
+        for trajectory in trajectories:
+            if not trajectory.is_clear(self.occupancy_grid):
+                trajectories.remove(trajectory)
 
-        # Step 5: Calculate costs for remaining trajectories and store in dict Trajectory -> cost
-        costs: dict[Trajectory, float] = {}
-        for trajectory in safe_trajectories:
-            cost: float = self.calculate_cost(trajectory, current_state, goal, obstacles)
-            costs[trajectory] = cost
+        # Sort Trajectory objects by cost
+        trajectories.sort(key=lambda traj: traj.get_cost(), reverse=True)
 
-        # Step 6: Select the trajectory with the lowest cost
-        best_trajectory = costs.index(min(costs.values()))
+        return velocity_command
 
-        if best_trajectory is None:
-            # If no best trajectory found, return zero velocity command
-            return 0.0, 0.0
+    def generate_vel_window(
+        self, max_vel_delta: float, max_vel: float
+    ) -> list[Tuple[float, float]]:
+        vel_window: list[Tuple[float, float]] = []
 
-        # Step 7: Convert the best trajectory to velocity command
-        vel_command = self.trajectory_to_velocity_command(best_trajectory)
+        current_velocity_left, current_velocity_right = self.current_vel
+        vel_index: int = 0
 
-        return vel_command
+        max_left = min(current_velocity_left + max_vel_delta, max_vel)
+        max_right = min(current_velocity_right + max_vel_delta, max_vel)
 
-    def get_velocity_window(self, current_vel: list) -> dict:
+        for l_vel in np.arange(
+            current_velocity_left - max_vel_delta,
+            max_left,
+            (max_vel_delta / 2),
+        ):
+            # For each left velocity, create a velocity for each right
+            for r_vel in np.arange(
+                current_velocity_right - max_vel_delta,
+                max_right,
+                (max_vel_delta / 2),
+            ):
+                vel_window[vel_index] = float(l_vel), float(r_vel)
+                vel_index += 1
+
+        return vel_window
+
+    def generate_trajectories(
+        self,
+        vel_window: list[Tuple[float, float]],
+        time_delta: float,
+        current_heading: float,
+        current_pos: Tuple[float, float],
+    ) -> list[Trajectory]:
         """
-        Create a velocity window based on current velocities.
+        Generate possible trajectories based on the velocity window.
+        1. left changes while right stays the same
+        2. right cycles thru vel window while left stays the same
+            Will create several duplicate of both velocities being the same. Must delete one of each
 
         Args:
-            current_vel: [vx, vy, omega] current velocities
+            velocity_window: List of velocities to consider.
 
         Returns:
-            {'vx': (min, max), 'vy': (min, max), 'omega': (min, max)}
+            List of generated trajectories.
         """
-        # Get current velocities
-        vx, vy, omega = current_vel
+        trajectories: list[Trajectory] = []
 
-        # Define velocity limits based on robot configuration
-        max_accel = 1.5
-        max_omega = 1.0
+        # For each velocity, create a trajectory
+        for vel in vel_window:
+            prev_l, prev_r = current_pos
+            l_vel = vel[0]
+            r_vel = vel[1]
+            # Create 10 points in trajectory
+            trajectory: Trajectory = Trajectory(vel)
+            for i in range(10):
+                new_l, new_r = prev_l + l_vel * time_delta, prev_r + r_vel * time_delta
+                trajectory.append_point((new_l, new_r))
+                trajectory.set_velocity((l_vel, r_vel))
+                prev_l, prev_r = new_l, new_r
 
-        vx_limits = (vx - max_accel, vx + max_accel)
-        vy_limits = (vy - max_accel, vy + max_accel)
-        omega_limits = (omega - max_omega, omega + max_omega)
-
-        return {"vx": vx_limits, "vy": vy_limits, "omega": omega_limits}
-
-    def generate_trajectories(self, current_position: list, velocity_window: dict) -> list:
-        """
-        Generate possible trajectories within the velocity window.
-
-        Args:
-            current_position: [x, y, theta] current position
-            velocity_window: {'vx': (min, max), 'vy': (min, max), 'omega': (min, max)}
-
-        Returns:
-            List of Trajectory objects
-        """
-        trajectories: list = []
-        vx_range = np.linspace(velocity_window["vx"][0], velocity_window["vx"][1], num=10)
-        vy_range = np.linspace(velocity_window["vy"][0], velocity_window["vy"][1], num=10)
-        omega_range = np.linspace(velocity_window["omega"][0], velocity_window["omega"][1], num=10)
-
-        for vx in vx_range:
-            for vy in vy_range:
-                for omega in omega_range:
-                    trajectory = self.create_trajectory(current_position, vx, vy, omega)
-                    trajectories.append(trajectory)
+            trajectories.append(trajectory)
 
         return trajectories
 
-    def create_trajectory(
-        self, current_position: list, vx: float, vy: float, omega: float
-    ) -> Trajectory:
+    def output_trajectory(self, trajectory: Trajectory) -> Trajectory:
         """
-        Create a trajectory based on current position and velocities.
-
-        Args:
-            current_position: [x, y, theta] current position
-            vx: Linear velocity in x direction
-            vy: Linear velocity in y direction
-            omega: Angular velocity
-
-        Returns:
-            Trajectory object
+        Outputs the trajectory to the appropriate interface (e.g., ROS topic, log file).
         """
-        # Placeholder for trajectory points generation logic
-        trajectory_points: list[Tuple[float, float, float]] = []
-        for t in np.linspace(0, 1, num=10):  # Generate 10 points along the trajectory
-            x: float = current_position[0] + vx * t
-            y: float = current_position[1] + vy * t
-            theta: float = current_position[2] + omega * t
-            trajectory_points.append((x, y, theta))
-        return Trajectory(points=trajectory_points)
-
-    def remove_collisions(self, trajectories: list, obstacles: np.ndarray) -> list:
-        """
-        Evaluate each trajectory and remove ones with collisions.
-
-        Args:
-            trajectories: List of Trajectory objects
-            obstacles: PointCloud2 message containing obstacle points
-
-        Returns:
-            List of safe Trajectory objects
-        """
-        safe_trajectories: list = []
-        for trajectory in trajectories:
-            for point in trajectory.points:
-                # If this point collides with an obstacle, remove trajectory
-                if self.is_collision(point, obstacles):
-                    break
-            else:
-                # If no collision was detected, keep the trajectory
-                safe_trajectories.append(trajectory)
-
-        return safe_trajectories
-
-    def is_collision(self, point: list, obstacles: np.ndarray) -> bool:
-        """
-        Check if a point collides with any obstacle.
-
-        Args:
-            point: [x, y, theta] point to check for collision
-            obstacles: PointCloud2 message containing obstacle points
-
-        Returns:
-            True if point collides with an obstacle, False otherwise
-        """
-
-        for obstacle in obstacles:
-            if self.is_point_in_obstacle(point, obstacle):
-                return True
-        return False
-
-    def is_point_in_obstacle(self, point: list, obstacle: Obstacle) -> bool:
-        """
-        Check if a point is within the radius of an obstacle.
-
-        Args:
-            point: [x, y] coordinates of the point
-            obstacle: Obstacle object
-
-        Returns:
-            True if the point +- the rovers radius is within the obstacle's radius, False otherwise
-        """
-        distance = np.sqrt(
-            (point[0] - obstacle.position[0]) ** 2 + (point[1] - obstacle.position[1]) ** 2
-        )
-        return distance <= obstacle.radius + self.robot_radius
-
-    def calculate_cost(
-        self,
-        trajectory: Trajectory,
-        current_state: list,
-        goal: Tuple[float, float],
-        obstacles: np.ndarray,
-    ) -> float:
-        """
-        Calculates the cost of each trajectory returns in float form.
-        If trajectory does not reach goal, return cost of 1
-
-        Args:
-            trajectory (Trajectory): projected trajectory of rover
-            goal (float): goal for the rover to navigate to
-            obstalces (np.array): array of list of obstacle points
-
-        Returns:
-            float: _description_
-        """
-
-        cost = 0.0
-
-        weights: dict = {}
-        cost_calculator = DWACostCalculations()
-
-        cost = cost_calculator.calculate_total_cost(
-            trajectory_points=trajectory.points,
-            velocity=Tuple[current_state[0:3]],
-            goal=goal,
-            obstacles=obstacles,
-            weights=weights,
-        )
-
-        # If end pos in trajectory is not goal, return 1.0
-        if trajectory.points[9] is not goal:
-            return 1.0
-
-        return cost
-
-    def trajectory_to_velocity_command(
-        self, trajectory: Trajectory, dt: float = 0.1
-    ) -> tuple[float, float]:
-        """
-        Convert a Trajectory object to differential drive velocity commands.
-
-        This method extracts velocity information from trajectory points and converts
-        it to left/right wheel velocities for differential drive control.
-
-        Args:
-            trajectory: Trajectory object containing points (x, y, theta)
-            dt: Time step between trajectory points (default 0.1 seconds)
-
-        Returns:
-            (left_wheel_vel, right_wheel_vel) in m/s
-        """
-        if not trajectory.points or len(trajectory.points) < 2:
-            return 0.0, 0.0
-
-        # Get velocities from the first two points in the trajectory
-        # This represents the immediate velocity the robot should follow
-        p1 = trajectory.points[0]
-        p2 = trajectory.points[1]
-
-        # Calculate linear velocities
-        dx = p2[0] - p1[0]
-        dy = p2[1] - p1[1]
-        dtheta = p2[2] - p1[2]
-
-        # Normalize angle difference to [-pi, pi]
-        while dtheta > math.pi:
-            dtheta -= 2 * math.pi
-        while dtheta < -math.pi:
-            dtheta += 2 * math.pi
-
-        # Convert to velocities
-        vx = dx / dt
-        vy = dy / dt
-        omega = dtheta / dt
-
-        # Convert to differential drive commands
-        return self.dwa_holonomic_to_differential(vx, vy, omega)
-
-    def dwa_holonomic_to_differential(
-        self, vx: float, vy: float, omega: float
-    ) -> tuple[float, float]:
-        """
-        Convert holonomic DWA output to differential drive (with vy consideration)
-
-        This version combines vx and vy into a single forward velocity,
-        useful if your DWA planner assumes holonomic motion but your robot is differential
-
-        Args:
-            vx: Linear velocity in x direction (m/s)
-            vy: Linear velocity in y direction (m/s)
-            omega: Angular velocity (rad/s)
-
-        Returns:
-            (left_wheel_vel, right_wheel_vel) in m/s
-        """
-        # Option 1: Just use magnitude of velocity vector
-        v_linear = math.sqrt(vx**2 + vy**2)
-
-        # Option 2: Project onto forward direction based on current motion
-        # (uncomment if you want to maintain direction)
-        # if vx < 0:  # Moving backward
-        #     v_linear = -v_linear
-
-        # Apply differential drive kinematics
-        left_wheel_vel = v_linear - (omega * self.wheel_base / 2.0)
-        right_wheel_vel = v_linear + (omega * self.wheel_base / 2.0)
-
-        return left_wheel_vel, right_wheel_vel
+        return trajectory

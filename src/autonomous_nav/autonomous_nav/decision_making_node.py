@@ -15,9 +15,8 @@ Functionality:
     - Publishes the current waypoint to the navigation node.
 """
 
-import math
 import sys
-from typing import Optional
+from typing import Optional, Tuple
 
 import rclpy
 from geometry_msgs.msg import Pose2D
@@ -26,6 +25,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 
+from autonomous_nav.dwa_planner import DWAPlanner
 from lib.color_codes import ColorCodes, colorStr
 
 
@@ -68,10 +68,9 @@ class DecisionMakingNode(Node):
 
         # ---- State Variables ----
         self.obstacle_detected: bool = False
-        self.obstacle_pointcloud: list[float] = []  # Mypy: typed list of floats
-        self.raw_obstacle_pointcloud: list[float] = (
-            []
-        )  # Mypy: typed list of floats directly from sensor
+        self.occupancy_grid: list[Tuple[float, float]] = []
+        self.goal: Tuple[float, float]
+        self.current_yaw = 0.0
 
         self.navigation_status: str = "No waypoint provided; Navigation Stopped."
         self.nav_feedback = Pose2D()
@@ -83,10 +82,13 @@ class DecisionMakingNode(Node):
 
         # ---- Subscribers ----
         self.create_subscription(Bool, "/obstacle_detected", self.obstacleCallback, 10)
-        self.create_subscription(PointCloud2, "/obstacle_goal_pointcloud", self.goalPointCloud, 10)
-        self.create_subscription(PointCloud2, "/raw_pointcloud", self.rawPointCloud, 10)
+        self.create_subscription(PointCloud2, "/obstacle_goal", self.goal, 10)
         self.create_subscription(String, "/navigation_status", self.navStatusCallback, 10)
         self.create_subscription(Pose2D, "/navigation_feedback", self.navFeedbackCallback, 10)
+        self.create_subscription(float, "/navigation_heading", self.navHeadingCallback, 10)
+
+        # Subscribe to get data about current velocity and position
+        # self.create_subscription(Pose2D, "/current_velocity", self.currentVelocityCallback, 10)
 
         # ---- Publishers (to Drivebase) ----
         self.left_drive_pub = self.create_publisher(Float32, "move_left_drivebase_side_message", 10)
@@ -95,7 +97,7 @@ class DecisionMakingNode(Node):
         )
 
         # Timer to run decision logic at ~10Hz
-        self.timer = self.create_timer(0.1, self.updateDecision)
+        self.timer = self.create_timer(0.1, self.update_decision)
 
         self.get_logger().info(colorStr("DecisionMakingNode started.", ColorCodes.BLUE_OK))
 
@@ -105,15 +107,8 @@ class DecisionMakingNode(Node):
     def obstacleCallback(self, msg: Bool) -> None:
         self.obstacle_detected = msg.data
 
-    def obstacleGoalPointCloud(self, msg: Float32MultiArray) -> None:
-        self.obstacle_pointcloud = list(msg.data)
-
-    def rawPointCloud(self, msg: Float32MultiArray) -> None:
-        """
-        Receives raw point cloud data from the sensor.
-        This is not used in the current logic but can be extended for more complex decision-making.
-        """
-        self.raw_obstacle_pointcloud = list(msg.data)
+    def obstacleOccupancyGridCallback(self, msg: Float32MultiArray) -> None:
+        self.occupancy_grid = list(msg.data)
 
     def navStatusCallback(self, msg: String) -> None:
         self.navigation_status = msg.data
@@ -123,6 +118,9 @@ class DecisionMakingNode(Node):
 
     def navFeedbackCallback(self, msg: Pose2D) -> None:
         self.nav_feedback = msg
+
+    def navHeadingCallback(self, msg: float) -> None:
+        self.current_yaw = msg
 
     # --------------------------------------------------------------------------
     #   Decision Logic
@@ -135,19 +133,67 @@ class DecisionMakingNode(Node):
     to navigate around them.
     """
 
+    def update_decision(self) -> None:
+        velocity_command: Tuple[float, float] = self.get_vel_command()
+        self.publish_drive_commands(velocity_command[0], velocity_command[1])
+
+    def get_vel_command(self) -> Tuple[float, float]:
+        """
+        Use the dwa_planner class to calculate a velocity command based on the 2d map of obstacles.
+
+        Args:
+            obstacles: List of detected obstacles.
+
+        Returns:
+            Tuple of left and right wheel velocities.
+        """
+
+        current_state: list[float] = []
+        goal: Tuple[float, float] = 100.0, 100.0
+
+        planner: DWAPlanner = DWAPlanner(
+            occupancy_grid=self.occupancy_grid,
+            robot_radius=0.5,
+            current_velocity=(0.0, 0.0),
+            current_position=(50.0, 0.0),
+            time_delta=0.1,
+            goal=self.goal,
+            heading=self.current_yaw,
+        )
+
+        velocity_command: Tuple[float, float] = planner.plan()
+
+        print("Velocity commands: {velocity_command[0]}, {velocity_command[1]}")
+
+        return velocity_command
+
+    def publish_drive_commands(self, left_speed: float, right_speed: float) -> None:
+        """
+        Publishes Float32 speeds to the drivebase.
+        Positive => forward, negative => reverse.
+        """
+        self.left_drive_pub.publish(Float32(data=left_speed))
+        self.right_drive_pub.publish(Float32(data=right_speed))
+
 
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
-    node = DecisionMakingNode()
+    decision_making_node = None
     try:
-        rclpy.spin(node)
+        decision_making_node = DecisionMakingNode()
+        rclpy.spin(decision_making_node)
     except KeyboardInterrupt:
         pass
     except ExternalShutdownException:
-        node.get_logger().info(colorStr("Shutting down decision making node", ColorCodes.BLUE_OK))
+        if decision_making_node is not None:
+            decision_making_node.get_logger().info(
+                colorStr("Shutting down decision_making_node", ColorCodes.BLUE_OK)
+            )
     finally:
-        node.destroy_node()
+        if decision_making_node is not None:
+            decision_making_node.destroy_node()
         rclpy.shutdown()
+        sys.exit(0)
 
 
 if __name__ == "__main__":
