@@ -30,7 +30,7 @@ class SensorProcessingNode(Node):
     def __init__(self) -> None:
         super().__init__("sensor_processing_node")
 
-        self.get_logger().info("Initializing sensor_processing_node with YOLO World detection...")
+        self.get_logger().info("Initializing sensor_processing_node...")
 
         self.bridge = CvBridge()
         self.camera_matrix: Optional[np.ndarray] = None
@@ -39,10 +39,16 @@ class SensorProcessingNode(Node):
         self.cloud_frame_count = 0  # Counter for point cloud frames
 
         # ----------------------------------------------------------------------
-        # Load a YOLO World model for custom object detection
-        self.model = YOLO("yolov8l-world.pt")  # Use YOLO World model
-        self.model.set_classes(["hammer", "bottle"])  # Define custom objects
+        # Initialize an octomap
+        self.octomap_resolution = 0.05  # 5cm resolution
+        self.octree = octomap.OcTree(self.octomap_resolution)
 
+        self.max_range = 10.0  # Maximum range for point cloud processing
+        self.min_range = 0.1  # Minimum range for point cloud processing
+        self.sensor_origin = octomap.Point3d(0.0, 0.0, 0.0)  # Sensor origin in octomap frame
+
+        self.camera_frame_id = "zed_camera_frame"
+        self.map_frame_id = "map"
         # ----------------------------------------------------------------------
         # Subscriptions
         self.image_sub = self.create_subscription(
@@ -52,29 +58,21 @@ class SensorProcessingNode(Node):
             CameraInfo, "/zed/zed_node/rgb/camera_info", self.processCameraInfo, 10
         )
 
-        self.depth_sub = self.create_subscription(
-            Image, "/zed/zed_node/depth/depth_registered", self.depthCallBack, 10
-        )
-
         self.cloud_sub = self.create_subscription(
             PointCloud2, "/zed/zed_node/point_cloud/cloud_registered", self.cloudCallBack, 10
         )
-        self.octomap_sub = self.create_subscription(
-            PointCloud2, "/occupied_cells", self.octomapCallBack, 10
-        )
 
+        self.get_logger().info("sensor_processing_node is up and running.")
         # ----------------------------------------------------------------------
         # Publishers
-        self.cloud_pub = self.create_publisher(Float32MultiArray, "/processed_cloud", 10)
+        self.octomap_pub = self.create_publisher(Octomap, "/octomap_binary", 10)
+        self.occupied_cells_pub = self.create_publisher(
+            MarkerArray, "/occupied_cells_vis_array", 10
+        )
+        self.free_space_pub = self.create_publisher(MarkerArray, "/free_cells_vis_array", 10)
 
-        # TODO publish the cost map right here
-
-        # # Object Detection with YOLO World
-        # self.yolo_sub = self.create_subscription(
-        #     Image, "/zed/zed_node/rgb/image_rect_color", self.yoloDetectionCallback, 10
-        # )
-
-        self.get_logger().info("sensor_processing_node is up and running with YOLO World.")
+        # Timer for periodic OctoMap publishing
+        self.octomap_publish_timer = self.create_timer(2.0, self.publish_octomap)
 
     # --------------------------------------------------------------------------
     #   processCameraInfo
@@ -127,69 +125,17 @@ class SensorProcessingNode(Node):
     #     cv2.waitKey(1)
 
     # --------------------------------------------------------------------------
-    #   Depth Processing
-    # --------------------------------------------------------------------------
-    def depthCallBack(self, msg: Image) -> None:
-        """
-        Processes depth data to ignore obstacles like wheels and ground.
-        """
-        try:
-            depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1")
-            height, width = depth_image.shape
-            valid_depths = depth_image[depth_image > 0]  # Filter out invalid depth values
-
-            if len(valid_depths) > 0:
-                #               self.get_logger().warning("No valid depth values found in the image.")
-                min_depth = np.min(valid_depths)
-                max_depth = np.max(valid_depths)
-                mean_depth = np.mean(valid_depths)
-
-                # Get depth at center of image
-                center_depth = depth_image[height // 2, width // 2]
-
-                # Print depth information
-                self.get_logger().info(
-                    f"Depth Stats - Min: {min_depth:.2f}m, Max: {max_depth:.2f}m, "
-                    f"Mean: {mean_depth:.2f}m, Center: {center_depth:.2f}m"
-                )
-
-                # Print a small sample of depth values around center
-                sample_region = depth_image[
-                    height // 2 - 2 : height // 2 + 3, width // 2 - 2 : width // 2 + 3
-                ]
-            #             self.get_logger().info(f"5x5 Center Sample (meters):\n{sample_region}")
-            else:
-                #             self.get_logger().warning("No valid depth values found in the image.")
-                return
-        except Exception as e:
-            #         self.get_logger().error(f"Failed to process depth image: {e}")
-            return
-
-        # Convert depth image to meters
-        depth_image_meters = depth_image * 0.001
-
-    # --------------------------------------------------------------------------
-    #   Octomap Processing
-    # --------------------------------------------------------------------------
-    # place the voxels from octomap_server into an array
-    def octomapCallBack(self, msg: PointCloud2) -> None:
-        octoPoints = pc2.read_points(msg, field_names=["x", "y", "z"], skip_nans=True)
-        octoPointList = list(octoPoints)
-        self.get_logger().info(f"Got {len(octoPointList)} occupiedVoxels")
-
-    # --------------------------------------------------------------------------
     #   Point Cloud Processing
     # --------------------------------------------------------------------------
     def cloudCallBack(self, msg: PointCloud2) -> None:
         try:
             # limit the processing to every 30th frame
             self.cloud_frame_count += 1
-            if self.cloud_frame_count % 30 != 0:
+            if self.cloud_frame_count % 20 != 0:
                 return
-            self.get_logger().info(f"Processing full point cloud:")
-            self.get_logger().info(f"  - Resolution: {msg.width}x{msg.height}")
-            self.get_logger().info(f"  - Total points: {msg.width * msg.height}")
-
+            self.get_logger().info(
+                f"Processing point cloud frame {self.cloud_frame_count} for OctoMap..."
+            )
             points = self.extract_all_points(msg)
 
             # if no points were extracted, log a warning
@@ -197,23 +143,19 @@ class SensorProcessingNode(Node):
                 self.get_logger().warning("No points extracted from cloud")
                 return
 
-            self.get_logger().info(f"Extracted points shape: {points.shape}")
             # filter invalid points
             finite_mask = np.isfinite(points)
             valid_rows = np.all(finite_mask, axis=1)
-
-            valid_depth_mask = points[:, 2] > 0.1  # Filter out points with depth <= 0.1m
-
-            combined_mask = valid_rows & valid_depth_mask
+            valid_depth_mask = points[:, 2] > self.min_range
+            range_mask = points[:, 2] < self.max_range
+            combined_mask = valid_rows & valid_depth_mask & range_mask
             valid_points = points[combined_mask]
 
-            if len(valid_points) == 0:
-                self.get_logger().info(
-                    f"Valid points: {len(valid_points)} out of {len(points)} ({len(valid_points)/len(points)*100:.1f}%)"
-                )
-                # self.analyze_full_point_cloud(points)
-                # PUBLISHING POINTS HERE
-                self.cloud_pub.publish(points)
+            if len(valid_points) > 0:
+                self.get_logger().info(f"Updating OctoMap with {len(valid_points)} valid points...")
+                self.update_octomap(valid_points, msg.header.stamp)
+            else:
+                self.get_logger().warning("No valid points found after filtering")
         except Exception as e:
             self.get_logger().error(f"Failed to process point cloud: {e}")
             import traceback
@@ -237,9 +179,7 @@ class SensorProcessingNode(Node):
             data = cloud_msg.data
 
             total_points = cloud_msg.width * cloud_msg.height
-            points = np.full(
-                (total_points, 3), np.nan, dtype=np.float32
-            )  # this creates a 1-D array of Tuples(x,y,z)
+            points = np.full((total_points, 3), np.nan, dtype=np.float32)
 
             self.get_logger().info(f"Extracting {total_points} points from PointCloud2")
 
@@ -419,6 +359,38 @@ class SensorProcessingNode(Node):
                 )
 
     # Also add this method for frame rate control
+
+    # --------------------------------------------------------------------------
+    #   octomap integration
+    # --------------------------------------------------------------------------
+    def update_octomap(self, points: np.ndarray, timestamp: Time) -> None:
+        """Update the OctoMap with new point cloud data"""
+
+        # Convert numpy points to OctoMap point cloud
+        octomap_cloud = octomap.Pointcloud()
+
+        for point in points:
+            # Filter out ground points (assuming camera is mounted above ground)
+            if point[1] < -0.5 or point[1] > 2.5:  # Skip points too low or too high
+                continue
+
+            octo_point = octomap.point3d(float(point[0]), float(point[1]), float(point[2]))
+            octomap_cloud.push_back(octo_point)
+
+        if octomap_cloud.size() == 0:
+            self.get_logger().warning("No valid points for OctoMap after filtering")
+            return
+
+        # Insert the point cloud into the octree
+        # The sensor origin should be updated based on robot pose if available
+        self.octree.insertPointCloud(octomap_cloud, self.sensor_origin, self.max_range)
+
+        # Update inner nodes
+        self.octree.updateInnerOccupancy()
+
+        self.get_logger().info(
+            f"Updated OctoMap with {octomap_cloud.size()} points. Tree size: {self.octree.size()}"
+        )
 
     # --------------------------------------------------------------------------
     #   ArUco Marker Detection
