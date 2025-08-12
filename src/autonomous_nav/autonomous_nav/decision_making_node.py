@@ -18,8 +18,10 @@ Functionality:
 import sys
 from typing import Optional, Tuple
 
+import numpy as np
 import rclpy
 from geometry_msgs.msg import Pose2D
+from numpy.typing import NDArray
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
@@ -68,9 +70,11 @@ class DecisionMakingNode(Node):
 
         # ---- State Variables ----
         self.obstacle_detected: bool = False
-        self.occupancy_grid: list[Tuple[float, float]] = []
+        self.costmap: NDArray[np.int8]
         self.goal: Tuple[float, float]
         self.current_yaw = 0.0
+        self.current_velocity: Tuple[float, float] = (0.0, 0.0)
+        self.current_pos: Tuple[float, float] = (0.0, 0.0)
 
         self.navigation_status: str = "No waypoint provided; Navigation Stopped."
         self.nav_feedback = Pose2D()
@@ -107,8 +111,8 @@ class DecisionMakingNode(Node):
     def obstacleCallback(self, msg: Bool) -> None:
         self.obstacle_detected = msg.data
 
-    def obstacleOccupancyGridCallback(self, msg: Float32MultiArray) -> None:
-        self.occupancy_grid = list(msg.data)
+    def obstacleCostMapCallback(self, msg: Float32MultiArray) -> None:
+        self.costmap = np.NDArray(msg.data)
 
     def navStatusCallback(self, msg: String) -> None:
         self.navigation_status = msg.data
@@ -148,17 +152,14 @@ class DecisionMakingNode(Node):
             Tuple of left and right wheel velocities.
         """
 
-        current_state: list[float] = []
-        goal: Tuple[float, float] = 100.0, 100.0
-
         planner: DWAPlanner = DWAPlanner(
-            occupancy_grid=self.occupancy_grid,
+            costmap=self.costmap,
             robot_radius=0.5,
-            current_velocity=(0.0, 0.0),
-            current_position=(50.0, 0.0),
+            current_velocity=self.current_velocity,
+            current_position=self.current_pos,
             time_delta=0.1,
             goal=self.goal,
-            heading=self.current_yaw,
+            theta=self.current_yaw,
         )
 
         velocity_command: Tuple[float, float] = planner.plan()

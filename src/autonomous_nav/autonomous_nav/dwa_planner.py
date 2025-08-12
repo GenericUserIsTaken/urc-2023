@@ -1,5 +1,5 @@
 import math
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -123,13 +123,13 @@ class Trajectory:
 class DWAPlanner:
     def __init__(
         self,
-        occupancy_grid: list[Tuple[float, float]],
+        costmap: NDArray[np.int8],
         robot_radius: float,
         current_velocity: Tuple[float, float],
         current_position: Tuple[float, float],
         time_delta: float,
-        goal: Tuple[float, float],
-        heading: float,
+        goal: Any,
+        theta: float,
     ):
         """
         Initialize the DWA planner with robot parameters.
@@ -141,13 +141,20 @@ class DWAPlanner:
         """
 
         # State Variables
-        self.occupancy_grid = occupancy_grid
+        self.costmap = costmap
         self.robot_radius = robot_radius
         self.current_vel = current_velocity
         self.current_pos = current_position
         self.time_delta = time_delta
         self.goal = goal
-        self.current_heading = heading
+        self.theta = theta
+
+        # Physical limits
+        self.min_linear_vel: float = 0.0
+        self.max_linear_vel: float = 1.0  # 15.7 radians per second
+        self.max_linear_accel: float = 1.0
+        self.max_angular_vel: float = 1.0  # radians per second
+        self.max_angular_accel: float = 1.0  # radians per second
 
     def plan(self) -> Tuple[float, float]:
         """
@@ -165,24 +172,20 @@ class DWAPlanner:
 
         velocity_command: Tuple[float, float] = 0, 0
 
-        max_vel_delta: float = 5.0
-        time_delta: float = 0.1
-        max_vel: float = 15.5  # radians per second
-
         # Generate velocity window
         velocity_window: list[Tuple[float, float]] = self.generate_vel_window(
-            max_vel_delta, max_vel
+            self.max_linear_accel, self.max_linear_vel
         )
 
         # Generate trajectories based on velocity window
         trajectories: list[Trajectory] = []
         trajectories = self.generate_trajectories(
-            velocity_window, time_delta, self.current_heading, self.current_pos
+            velocity_window, self.time_delta, self.theta, self.current_pos
         )
 
         # Evaluate all trajectories and determine what to remove
         for trajectory in trajectories:
-            if not trajectory.is_clear(self.occupancy_grid):
+            if not trajectory.is_valid(self.costmap):
                 trajectories.remove(trajectory)
 
         # Sort Trajectory objects by cost
@@ -260,3 +263,18 @@ class DWAPlanner:
         Outputs the trajectory to the appropriate interface (e.g., ROS topic, log file).
         """
         return trajectory
+
+    def calculate_dynamic_window(
+        self, current_linear_vel: float, current_angular_vel: float, dt: float
+    ) -> Tuple[float, float, float, float]:
+        """
+        Calculate velocities reachable within one timestep.
+        Returns: (min_v, max_v, min_w, max_w)
+        """
+        # Dynamic constraints (what's reachable given acceleration limits)
+        min_v = max(current_linear_vel - self.max_linear_accel * dt, self.min_linear_vel)
+        max_v = min(current_linear_vel + self.max_linear_accel * dt, self.max_linear_vel)
+        min_w = max(current_angular_vel - self.max_angular_accel * dt, -self.max_angular_vel)
+        max_w = min(current_angular_vel + self.max_angular_accel * dt, self.max_angular_vel)
+
+        return (min_v, max_v, min_w, max_w)
