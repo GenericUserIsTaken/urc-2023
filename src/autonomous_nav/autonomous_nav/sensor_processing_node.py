@@ -363,7 +363,7 @@ class SensorProcessingNode(Node):
     # --------------------------------------------------------------------------
     #   octomap integration
     # --------------------------------------------------------------------------
-    def update_octomap(self, points: np.ndarray, timestamp: Time) -> None:
+    def update_octomap(self, points: np.ndarray) -> None:
         """Update the OctoMap with new point cloud data"""
 
         # Convert numpy points to OctoMap point cloud
