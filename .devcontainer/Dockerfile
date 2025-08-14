@@ -2,7 +2,7 @@
 FROM ros:humble
 
 # 1. Add Stereolabs repo for ZED SDK 4.0 on Ubuntu 22 with CUDA 11.7
-RUN echo "deb https://download.stereolabs.com/zedsdk/4.0/ubuntu22_cuda11.7/ ./" \
+RUN echo "deb https://download.stereolabs.com/zedsdk/4.1.4/ubuntu22_cuda11.7/ ./" \
     | tee /etc/apt/sources.list.d/zed.list && \
     apt-get update && apt-get install -y wget gnupg2
 
