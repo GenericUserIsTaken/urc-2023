@@ -5,7 +5,7 @@ RUN apt-get update
 RUN apt-get install -y wget gnupg2
 # 2. Add the repository's GPG key to avoid security warnings
 RUN wget -qO - https://download.stereolabs.com/zedsdk/4.0/apt_key.pub \
-    | apt-key add 
+    | apt-key add -
 
 # 1. Add Stereolabs repo for ZED SDK 4.0 on Ubuntu 22 with CUDA 11.7
 RUN echo "deb https://download.stereolabs.com/zedsdk/4.0/ubuntu22_cuda11.7/ ./" \
