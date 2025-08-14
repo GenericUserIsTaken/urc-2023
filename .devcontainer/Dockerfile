@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y \
   #rivz to visualize camera data
   ros-humble-rviz2
   # Clean out the apt lists after `apt-get update`
-  && rm -rf /var/lib/apt/lists/*
+  rm -rf /var/lib/apt/lists/*
 
 
 #Install moteus python library https://github.com/mjbots/moteus/tree/main/lib/python
