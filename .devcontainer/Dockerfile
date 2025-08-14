@@ -1,6 +1,7 @@
 # Base image: Ubuntu 20.04 with ROS2 Humble installed
 FROM ros:humble
 
+RUN apt-get update
 RUN apt-get install -y wget gnupg2
 # 2. Add the repository's GPG key to avoid security warnings
 RUN wget -qO - https://download.stereolabs.com/zedsdk/4.0/apt_key.pub \
