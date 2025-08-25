@@ -6,42 +6,23 @@ Functionality:
       Sensor Processing (/obstacle_detected, /obstacle_info), and (optionally) Localization
       to make decisions on how to drive the rover to its waypoint.
     - Publishes commands to the drivebase to move or stop.
-
-
-
-    - Receives goals from navigation node to determine the next waypoint
-    - Uses DWA to determine the best path to the waypoint
-    - Publishes commands to the drivebase to move or stop.
-    - Publishes the current waypoint to the navigation node.
 """
 
+import math
 import sys
-from typing import Optional, Tuple
+from typing import Optional
 
-import numpy as np
 import rclpy
 from geometry_msgs.msg import Pose2D
-from numpy.typing import NDArray
+from nav2_simple_commander.costmap_2d import PyCostmap2D
+from nav_msgs.msg import OccupancyGrid
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import Bool, Float32, Float32MultiArray, String
 
-from autonomous_nav.dwa_planner import DWAPlanner
 from lib.color_codes import ColorCodes, colorStr
 
-
-class Obstacle:
-    def __init__(self, position: list, radius: float):
-        """
-        Initialize an obstacle with a position and radius.
-
-        Args:
-            position: [x, y] coordinates of the obstacle
-            radius: Radius of the obstacle
-        """
-        self.position = position
-        self.radius = radius
+from .dwa_planner import DWAPlanner
 
 
 class DecisionMakingNode(Node):
@@ -70,11 +51,8 @@ class DecisionMakingNode(Node):
 
         # ---- State Variables ----
         self.obstacle_detected: bool = False
-        self.costmap: NDArray[np.int8]
-        self.goal: Tuple[float, float]
-        self.current_yaw = 0.0
-        self.current_velocity: Tuple[float, float] = (0.0, 0.0)
-        self.current_pos: Tuple[float, float] = (0.0, 0.0)
+        # Change obstacle_info to be Nav2 Costmap 2D data.
+        self.obstacle_info: list[float] = []
 
         self.navigation_status: str = "No waypoint provided; Navigation Stopped."
         self.nav_feedback = Pose2D()
@@ -86,13 +64,10 @@ class DecisionMakingNode(Node):
 
         # ---- Subscribers ----
         self.create_subscription(Bool, "/obstacle_detected", self.obstacleCallback, 10)
-        self.create_subscription(PointCloud2, "/obstacle_goal", self.goal, 10)
+        self.create_subscription(OccupancyGrid, "/costmap", self.obstacleInfoCallback, 10)
         self.create_subscription(String, "/navigation_status", self.navStatusCallback, 10)
+        # gives us the angle and position of the rover
         self.create_subscription(Pose2D, "/navigation_feedback", self.navFeedbackCallback, 10)
-        self.create_subscription(float, "/navigation_heading", self.navHeadingCallback, 10)
-
-        # Subscribe to get data about current velocity and position
-        # self.create_subscription(Pose2D, "/current_velocity", self.currentVelocityCallback, 10)
 
         # ---- Publishers (to Drivebase) ----
         self.left_drive_pub = self.create_publisher(Float32, "move_left_drivebase_side_message", 10)
@@ -101,7 +76,7 @@ class DecisionMakingNode(Node):
         )
 
         # Timer to run decision logic at ~10Hz
-        self.timer = self.create_timer(0.1, self.update_decision)
+        self.timer = self.create_timer(0.1, self.updateDecision)
 
         self.get_logger().info(colorStr("DecisionMakingNode started.", ColorCodes.BLUE_OK))
 
@@ -111,8 +86,8 @@ class DecisionMakingNode(Node):
     def obstacleCallback(self, msg: Bool) -> None:
         self.obstacle_detected = msg.data
 
-    def obstacleCostMapCallback(self, msg: Float32MultiArray) -> None:
-        self.costmap = np.NDArray(msg.data)
+    def obstacleInfoCallback(self, msg: OccupancyGrid) -> None:
+        self.obstacle_info = PyCostmap2D(msg)
 
     def navStatusCallback(self, msg: String) -> None:
         self.navigation_status = msg.data
@@ -123,58 +98,71 @@ class DecisionMakingNode(Node):
     def navFeedbackCallback(self, msg: Pose2D) -> None:
         self.nav_feedback = msg
 
-    def navHeadingCallback(self, msg: float) -> None:
-        self.current_yaw = msg
+    # --------------------------------------------------------------------------
+    #   Main Decision Logic
+    # --------------------------------------------------------------------------
+    def updateDecision(self) -> None:
+        """
+        Periodically checks obstacles, waypoint status, and decides how to drive.
+        """
+        # If no waypoint or reached
+        if (
+            "No waypoint provided" in self.navigation_status
+            or "Successfully reached" in self.navigation_status
+        ):
+            self.stopRover()
+            self.avoid_state = None  # Reset
+            return
+
+        # Obstacle logic
+        if self.obstacle_detected or self.avoid_state is not None:
+            self.handleObstacleAvoidance()
+            return
+
+        # Normal waypoint driving
+        self.driveTowardWaypoint()
+
+    def handleObstacleAvoidance(self) -> None:
+        if self.obstacle_info is not None:
+            # Extract numpy array from PyCostmap2D for DWA
+            costmap_array = self.obstacle_info.costmap
+
+            # Create DWA Planner with costmap
+            dwa_planner = DWAPlanner(
+                costmap=costmap_array,
+                robot_radius=0.3,  # Your robot radius
+                current_velocity=self.current_wheel_vel,
+                current_position=self.current_pos,
+                time_delta=0.1,
+                goal=self.goal,
+                theta=self.current_theta,
+            )
+
+            # Get optimal wheel velocities
+            left_vel, right_vel = dwa_planner.plan()
+            self.publishDriveCommands(left_vel, right_vel)
 
     # --------------------------------------------------------------------------
-    #   Decision Logic
+    #   Helper Functions
     # --------------------------------------------------------------------------
+    def stopRover(self) -> None:
+        """Publish zero velocity."""
+        self.publishDriveCommands(0.0, 0.0)
 
-    """
-    Receives a 2D map of the obstacles and navigates to a goal point.
-    Point Cloud is represented by a numpy array of a list of floats.
-    Maps Point Cloud to a list of Obstacle objects and inputs to dwa_planner
-    to navigate around them.
-    """
-
-    def update_decision(self) -> None:
-        velocity_command: Tuple[float, float] = self.get_vel_command()
-        self.publish_drive_commands(velocity_command[0], velocity_command[1])
-
-    def get_vel_command(self) -> Tuple[float, float]:
-        """
-        Use the dwa_planner class to calculate a velocity command based on the 2d map of obstacles.
-
-        Args:
-            obstacles: List of detected obstacles.
-
-        Returns:
-            Tuple of left and right wheel velocities.
-        """
-
-        planner: DWAPlanner = DWAPlanner(
-            costmap=self.costmap,
-            robot_radius=0.5,
-            current_velocity=self.current_velocity,
-            current_position=self.current_pos,
-            time_delta=0.1,
-            goal=self.goal,
-            theta=self.current_yaw,
-        )
-
-        velocity_command: Tuple[float, float] = planner.plan()
-
-        print("Velocity commands: {velocity_command[0]}, {velocity_command[1]}")
-
-        return velocity_command
-
-    def publish_drive_commands(self, left_speed: float, right_speed: float) -> None:
+    def publishDriveCommands(self, left_speed: float, right_speed: float) -> None:
         """
         Publishes Float32 speeds to the drivebase.
         Positive => forward, negative => reverse.
         """
         self.left_drive_pub.publish(Float32(data=left_speed))
         self.right_drive_pub.publish(Float32(data=right_speed))
+
+    @staticmethod
+    def sign(value: float) -> float:
+        """
+        Returns +1.0 if value >= 0.0, else -1.0.
+        """
+        return 1.0 if value >= 0.0 else -1.0
 
 
 def main(args: list[str] | None = None) -> None:
