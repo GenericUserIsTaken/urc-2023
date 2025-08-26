@@ -2,6 +2,7 @@ import math
 from typing import Any, List, Optional, Tuple
 
 import numpy as np
+from nav2_simple_commander.costmap_2d import PyCostmap2D
 from numpy.typing import NDArray
 
 
@@ -58,7 +59,7 @@ class Trajectory:
 class DWAPlanner:
     def __init__(
         self,
-        costmap: NDArray[np.int8],
+        costmap: PyCostmap2D,
         robot_radius: float,
         current_velocity: Tuple[float, float],  # (left_wheel, right_wheel) velocities
         current_position: Tuple[float, float],  # (x, y) position
@@ -81,7 +82,7 @@ class DWAPlanner:
         # Robot physical parameters (adjust these to match your rover)
         self.wheel_base = 0.5  # Distance between left and right wheels in meters
         self.wheel_radius = 0.11  # Radius of wheels in meters
-    
+
         # Velocity limits (in m/s and rad/s)
         self.max_linear_vel = 1.0  # Maximum forward velocity
         self.min_linear_vel = -0.5  # Maximum backward velocity (negative)

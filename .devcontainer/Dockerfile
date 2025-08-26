@@ -25,11 +25,10 @@ RUN mkdir -p /usr/share/keyrings && \
     apt-get update
 
 # Install ROS packages and dependencies
-RUN apt-get install -y \
+RUN apt-get update && apt-get install -y \
     git \
     python3-pip \
     ssh-client \
-    ros-humble-rosbridge-server \
     python3-rosdep \
     python3-colcon-common-extensions \
     usbutils \
@@ -40,6 +39,10 @@ RUN apt-get install -y \
     libboost-python-dev \
     libopencv-dev \
     python3-opencv \
+    && (apt-get install -y \
+    ros-humble-nav2-simple-commander \
+    ros-humble-nav-msgs \
+    || echo "Warning: Some ROS packages may not be available") \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
