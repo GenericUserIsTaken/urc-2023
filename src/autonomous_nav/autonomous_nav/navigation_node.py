@@ -1,10 +1,11 @@
 import math
 import sys
+from queue import Queue
 from typing import Optional, Tuple
 
 import rclpy
 from geometry_msgs.msg import Pose2D
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, OccupancyGrid
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import NavSatFix
@@ -144,6 +145,7 @@ class NavigationNode(Node):
 
         # If no active waypoint
         if self.active_waypoint is None:
+            #plan a set of waypoints using a queue
             self.publishStatus("No waypoint provided; Navigation Stopped.")
             return
 
@@ -161,7 +163,50 @@ class NavigationNode(Node):
 
         self.publishStatus(f"En route to waypoint ({goal_x:.2f}, {goal_y:.2f})")
         self.publishFeedback(goal_x, goal_y)
+    
+    def planPath(self, goal_location:Tuple[float, float], path: Queue, grid:OccupancyGrid, ) -> None:
+        path_radius = 5
+        grid_height = grid.info.height
+        grid_width = grid.info.width
+        grid_origin = grid.info.origin #global coordinates of origin
+        self.ref_lat # x
+        self.ref_lon # y
 
+        #cycle through a costmap and assign each point within a 5 meter radius a certain value (heuristic)
+        #add the point with the lowest value to the path queue
+        # heuristic  (cartesian distance to the point) - costmap value
+        #  expensive:  run through whole aarray
+        #cheap : only look at point that get you closer to the goal location and are within 5 meters
+        # task: make an algorithm that filters out all points farther than 5 meters and thet 
+
+        #localize the rover within the map to draw a boundary
+
+        #attain position within costmap
+        for my in range(grid.info.height):
+            for mx in range(grid.info.width):
+                index = my * grid.info.width + mx
+                value = grid.data[index]
+                
+
+        #filter out points farther than path radius
+
+        #filter out points that take you farther away from target
+
+        #choose point with the lowest value
+
+    def localize_rover(self, grid: OccupancyGrid) -> int:
+        x=5
+        string="WRITE THIS"
+        return x
+        #need to ask jake how the costmap is made 
+        #critical info: global coordinates of the costmap what i can measure relative to
+        #
+
+    def global_index_location(self, grid: OccupancyGrid, int index) -> Tuple[float,float]:
+        x=8
+        string="write this"
+        return (3,4)
+    
     def turnTowardGoal(self, goal_Location: Tuple[float, float]) -> None:
         a = self.distance_2d(
             self.current_position[0], self.current_position[1], goal_Location[0], goal_Location[1]
