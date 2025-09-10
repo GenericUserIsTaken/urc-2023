@@ -1,9 +1,8 @@
 import math
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from nav2_simple_commander.costmap_2d import PyCostmap2D
-from numpy.typing import NDArray
 
 
 class Trajectory:
@@ -21,6 +20,7 @@ class Trajectory:
         self.angular_vel = angular_vel
         self.points = points if points is not None else []
         self.cost = float("inf")
+        self.heading_cost_factor: float = 2.0
 
     def add_point(self, x: float, y: float, theta: float) -> None:
         """Add a point to the trajectory."""
@@ -30,15 +30,7 @@ class Trajectory:
         """Sets the velocity of the trajectory"""
         self.velocity = velocity
 
-    def set_cost(self, cost: int) -> None:
-        """Sets the cost of the trajectory"""
-        self.cost = cost
-
-    def get_cost(self) -> float:
-        """Returns the cost of the trajectory"""
-        return self.cost
-
-    def is_valid(self, occupancy_grid: NDArray[np.int8]) -> bool:
+    def is_valid(self, costmap: PyCostmap2D) -> bool:
         """
         Checks if trajectory object should be removed by checking against points in grid
         Returns false if there is a collision.
@@ -46,14 +38,43 @@ class Trajectory:
         total_cost: int = 0  # use python int to avoid int8 overflow during accumulation
         for point in self.points:
             x, y = int(point[0]), int(point[1])
-            cost: np.int8 = occupancy_grid[x, y]
+            cost = costmap.getCostXY(x, y)
             total_cost += int(cost)
             if cost > np.int8(100):
                 return False
 
-        self.set_cost(total_cost)
+        self.cost = total_cost
 
         return True
+
+    def compare_costs(self, other: "Trajectory") -> float:
+        """
+        Compare the cost of this trajectory with another trajectory.
+
+        Args:
+            other: Another Trajectory object to compare against
+
+        Returns:
+            Negative if this trajectory is cheaper, positive if more expensive, 0 if equal
+        """
+        if not isinstance(other, Trajectory):
+            raise TypeError("Other object is not a Trajectory")
+
+        return self.cost - other.cost
+
+    def apply_heading_cost(self) -> None:
+        """
+        Apply a heading cost to the trajectory based on its final heading.
+
+        Args:
+            trajectory: The Trajectory object to modify
+
+        Returns:
+            The modified cost of the trajectory
+        """
+        heading = self.points[9].theta
+        heading_cost = abs(heading) * self.heading_cost_factor
+        self.cost += heading_cost
 
 
 class DWAPlanner:
@@ -97,12 +118,6 @@ class DWAPlanner:
         self.linear_vel_samples = 11  # Number of linear velocity samples
         self.angular_vel_samples = 21  # Number of angular velocity samples
 
-        # Cost weights (tune these for desired behavior)
-        self.weight_goal_heading = 1.0
-        self.weight_distance = 0.8
-        self.weight_velocity = 0.2
-        self.weight_obstacle = 2.0
-
     def plan(self) -> Tuple[float, float]:
         """
         Main planning method - generates trajectories and returns best wheel velocities.
@@ -129,9 +144,11 @@ class DWAPlanner:
             # Emergency stop if no trajectories generated
             return (0.0, 0.0)
 
-        # TODO: Evaluate trajectories and select best one
-        # For now, return first valid trajectory as example
-        best_trajectory = trajectories[0]
+        # Factor in heading cost to tracjetory costs
+        self.apply_heading_costs(trajectories)
+
+        # Single out the cheapest trajectory.
+        best_trajectory: Trajectory = self.get_cheapest_trajectory(trajectories)
 
         # Convert the best trajectory's velocities back to wheel velocities
         left_wheel, right_wheel = self.robot_to_wheel_velocities(
@@ -336,3 +353,24 @@ class DWAPlanner:
                 velocity_samples.append((v, w))
 
         return velocity_samples
+
+    def remove_invalid_trajectories(self, trajectories: list[Trajectory]) -> None:
+        for trajectory in trajectories:
+            if not trajectory.is_valid(self.costmap):
+                trajectories.remove(trajectory)
+
+    def get_cheapest_trajectory(self, trajectories: list[Trajectory]) -> Trajectory:
+        """
+        Find the trajectory with the lowest cost from a list of trajectories.
+
+        Args:
+            trajectories: List of Trajectory objects to compare
+
+        Returns:
+            The trajectory with the lowest cost
+        """
+        return min(trajectories, key=lambda trajectory: trajectory.cost)
+
+    def apply_heading_costs(self, trajectories: list[Trajectory]) -> None:
+        for trajectory in trajectories:
+            trajectory.apply_heading_cost()

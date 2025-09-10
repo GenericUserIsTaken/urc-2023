@@ -8,7 +8,6 @@ Functionality:
     - Publishes commands to the drivebase to move or stop.
 """
 
-import math
 import sys
 from typing import Optional
 
@@ -52,7 +51,7 @@ class DecisionMakingNode(Node):
         # ---- State Variables ----
         self.obstacle_detected: bool = False
         # Change obstacle_info to be Nav2 Costmap 2D data.
-        self.obstacle_info: list[float] = []
+        self.obstacle_info: Optional[PyCostmap2D] = None
 
         self.navigation_status: str = "No waypoint provided; Navigation Stopped."
         self.nav_feedback = Pose2D()
@@ -63,11 +62,11 @@ class DecisionMakingNode(Node):
         self.avoid_start_time = self.get_clock().now()
 
         # ---- Subscribers ----
-        self.create_subscription(Bool, "/obstacle_detected", self.obstacleCallback, 10)
-        self.create_subscription(OccupancyGrid, "/costmap", self.obstacleInfoCallback, 10)
+        self.create_subscription(Bool, "/obstacle_detected", self.obstacle_callback, 10)
+        self.create_subscription(OccupancyGrid, "/costmap", self.obstacle_info_callback, 10)
         self.create_subscription(String, "/navigation_status", self.navStatusCallback, 10)
         # gives us the angle and position of the rover
-        self.create_subscription(Pose2D, "/navigation_feedback", self.navFeedbackCallback, 10)
+        self.create_subscription(Pose2D, "/navigation_feedback", self.nav_feedback_callback, 10)
 
         # ---- Publishers (to Drivebase) ----
         self.left_drive_pub = self.create_publisher(Float32, "move_left_drivebase_side_message", 10)
@@ -76,17 +75,17 @@ class DecisionMakingNode(Node):
         )
 
         # Timer to run decision logic at ~10Hz
-        self.timer = self.create_timer(0.1, self.updateDecision)
+        self.timer = self.create_timer(0.1, self.update_decision)
 
         self.get_logger().info(colorStr("DecisionMakingNode started.", ColorCodes.BLUE_OK))
 
     # --------------------------------------------------------------------------
     #   Subscription Callbacks
     # --------------------------------------------------------------------------
-    def obstacleCallback(self, msg: Bool) -> None:
+    def obstacle_callback(self, msg: Bool) -> None:
         self.obstacle_detected = msg.data
 
-    def obstacleInfoCallback(self, msg: OccupancyGrid) -> None:
+    def obstacle_info_callback(self, msg: OccupancyGrid) -> None:
         self.obstacle_info = PyCostmap2D(msg)
 
     def navStatusCallback(self, msg: String) -> None:
@@ -95,13 +94,13 @@ class DecisionMakingNode(Node):
         #     colorStr(f"Navigation Status: {self.navigation_status}", ColorCodes.YELLOW_WARN)
         # )
 
-    def navFeedbackCallback(self, msg: Pose2D) -> None:
+    def nav_feedback_callback(self, msg: Pose2D) -> None:
         self.nav_feedback = msg
 
     # --------------------------------------------------------------------------
     #   Main Decision Logic
     # --------------------------------------------------------------------------
-    def updateDecision(self) -> None:
+    def update_decision(self) -> None:
         """
         Periodically checks obstacles, waypoint status, and decides how to drive.
         """
@@ -110,27 +109,19 @@ class DecisionMakingNode(Node):
             "No waypoint provided" in self.navigation_status
             or "Successfully reached" in self.navigation_status
         ):
-            self.stopRover()
+            self.stop_rover()
             self.avoid_state = None  # Reset
             return
 
-        # Obstacle logic
-        if self.obstacle_detected or self.avoid_state is not None:
-            self.handleObstacleAvoidance()
-            return
+        else:
+            self.handle_obstacle_avoidance()
 
-        # Normal waypoint driving
-        self.driveTowardWaypoint()
-
-    def handleObstacleAvoidance(self) -> None:
+    def handle_obstacle_avoidance(self) -> None:
         if self.obstacle_info is not None:
-            # Extract numpy array from PyCostmap2D for DWA
-            costmap_array = self.obstacle_info.costmap
-
             # Create DWA Planner with costmap
             dwa_planner = DWAPlanner(
-                costmap=costmap_array,
-                robot_radius=0.3,  # Your robot radius
+                costmap=self.obstacle_info,
+                robot_radius=0.3,
                 current_velocity=self.current_wheel_vel,
                 current_position=self.current_pos,
                 time_delta=0.1,
@@ -140,16 +131,18 @@ class DecisionMakingNode(Node):
 
             # Get optimal wheel velocities
             left_vel, right_vel = dwa_planner.plan()
-            self.publishDriveCommands(left_vel, right_vel)
+            self.publish_drive_commands(left_vel, right_vel)
+        else:
+            self.stop_rover()
 
     # --------------------------------------------------------------------------
     #   Helper Functions
     # --------------------------------------------------------------------------
-    def stopRover(self) -> None:
+    def stop_rover(self) -> None:
         """Publish zero velocity."""
-        self.publishDriveCommands(0.0, 0.0)
+        self.publish_drive_commands(0.0, 0.0)
 
-    def publishDriveCommands(self, left_speed: float, right_speed: float) -> None:
+    def publish_drive_commands(self, left_speed: float, right_speed: float) -> None:
         """
         Publishes Float32 speeds to the drivebase.
         Positive => forward, negative => reverse.
@@ -171,6 +164,10 @@ def main(args: list[str] | None = None) -> None:
     try:
         decision_making_node = DecisionMakingNode()
         rclpy.spin(decision_making_node)
+
+        # Entry point for business logic
+        decision_making_node.update_decision()
+
     except KeyboardInterrupt:
         pass
     except ExternalShutdownException:
