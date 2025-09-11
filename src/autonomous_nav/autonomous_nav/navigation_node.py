@@ -180,27 +180,25 @@ class NavigationNode(Node):
         # task: make an algorithm that filters out all points farther than 5 meters and thet 
 
         #localize the rover within the map to draw a boundary
-
+        #TODO
         #attain position within costmap
-        for my in range(grid.info.height):
-            for mx in range(grid.info.width):
-                index = my * grid.info.width + mx
-                value = grid.data[index]
-                
-
+        current_index = self.localize_rover(grid, self.current_position)
         #filter out points farther than path radius
-
+        min = 300
+        for position in grid.data:
+            
         #filter out points that take you farther away from target
 
         #choose point with the lowest value
 
-    def localize_rover(self, grid: OccupancyGrid) -> int:
-        x=5
-        string="WRITE THIS"
-        return x
-        #need to ask jake how the costmap is made 
-        #critical info: global coordinates of the costmap what i can measure relative to
-        #
+    def localize_rover(self, grid: OccupancyGrid, current_position: Tuple[float,float]) -> int:
+        starting_position = 0,0 #big assumptionß
+        column= current_position[0]/grid.info.resolution #x index position
+        row = current_position[1]/grid.info.resolution #y index position
+        current_index = int((row * grid.info.height/grid.info.resolution) + column)%1
+        return current_index
+    
+
 
     def global_index_location(self, grid: OccupancyGrid, int index) -> Tuple[float,float]:
         x=8
