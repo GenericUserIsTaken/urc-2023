@@ -183,13 +183,23 @@ class NavigationNode(Node):
         #TODO
         #attain position within costmap
         current_index = self.localize_rover(grid, self.current_position)
-        #filter out points farther than path radius
-        min = 300
-        for position in grid.data:
-            
-        #filter out points that take you farther away from target
-
+        #gather points within a certain radius
+        target_area = self.collect_radius(grid,current_index)
         #choose point with the lowest value
+        #base value on the distance to the goal location and the cost on the map
+    def collect_radius(self, grid: OccupancyGrid, current_index: int) -> list[int]:
+        radius = 5
+        points_in_radius = []
+        row_width= grid.info.width
+        num_rows= int(radius/grid.info.resolution)
+        starting_index= int(current_index-((grid.info.width*(radius/2)/grid.info.resolution)))
+        ending_index= int(current_index+((grid.info.width*(radius/2)/grid.info.resolution)))
+        for i in range(0,num_rows):
+            for j in range(0,row_width):
+                index=starting_index+(i*row_width)+j
+                points_in_radius.append({grid.data[index], index})
+        return points_in_radius
+
 
     def localize_rover(self, grid: OccupancyGrid, current_position: Tuple[float,float]) -> int:
         starting_position = 0,0 #big assumptionß
