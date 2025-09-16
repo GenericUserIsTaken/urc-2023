@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 
 import rclpy
 from geometry_msgs.msg import Pose2D
-from nav_msgs.msg import Odometry, OccupancyGrid
+from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import NavSatFix
@@ -145,7 +145,7 @@ class NavigationNode(Node):
 
         # If no active waypoint
         if self.active_waypoint is None:
-            #plan a set of waypoints using a queue
+            # plan a set of waypoints using a queue
             self.publishStatus("No waypoint provided; Navigation Stopped.")
             return
 
@@ -163,58 +163,84 @@ class NavigationNode(Node):
 
         self.publishStatus(f"En route to waypoint ({goal_x:.2f}, {goal_y:.2f})")
         self.publishFeedback(goal_x, goal_y)
-    
-    def planPath(self, goal_location:Tuple[float, float], path: Queue, grid:OccupancyGrid, ) -> None:
+
+    def planPath(
+        self,
+        goal_location: Tuple[float, float],
+        path: Queue,
+        grid: OccupancyGrid,
+    ) -> None:
         path_radius = 5
         grid_height = grid.info.height
         grid_width = grid.info.width
-        grid_origin = grid.info.origin #global coordinates of origin
-        self.ref_lat # x
-        self.ref_lon # y
+        grid_origin = grid.info.origin  # global coordinates of origin
+        self.ref_lat  # x
+        self.ref_lon  # y
 
-        #cycle through a costmap and assign each point within a 5 meter radius a certain value (heuristic)
-        #add the point with the lowest value to the path queue
+        # cycle through a costmap and assign each point within a 5 meter radius a certain value (heuristic)
+        # add the point with the lowest value to the path queue
         # heuristic  (cartesian distance to the point) - costmap value
         #  expensive:  run through whole aarray
-        #cheap : only look at point that get you closer to the goal location and are within 5 meters
-        # task: make an algorithm that filters out all points farther than 5 meters and thet 
+        # cheap : only look at point that get you closer to the goal location and are within 5 meters
+        # task: make an algorithm that filters out all points farther than 5 meters and thet
 
-        #localize the rover within the map to draw a boundary
-        #TODO
-        #attain position within costmap
+        # localize the rover within the map to draw a boundary
+        # TODO
+        # attain position within costmap
         current_index = self.localize_rover(grid, self.current_position)
-        #gather points within a certain radius
-        target_area = self.collect_radius(grid,current_index)
-        #choose point with the lowest value
-        #base value on the distance to the goal location and the cost on the map
+        # gather points within a certain radius
+        target_area = self.collect_radius(grid, current_index)
+        # choose point with the lowest value
+        # base value on the distance to the goal location and the cost on the map
+
     def collect_radius(self, grid: OccupancyGrid, current_index: int) -> list[int]:
         radius = 5
         points_in_radius = []
-        row_width= grid.info.width
-        num_rows= int(radius/grid.info.resolution)
-        starting_index= int(current_index-((grid.info.width*(radius/2)/grid.info.resolution)))
-        ending_index= int(current_index+((grid.info.width*(radius/2)/grid.info.resolution)))
-        for i in range(0,num_rows):
-            for j in range(0,row_width):
-                index=starting_index+(i*row_width)+j
+        row_width = grid.info.width
+        num_rows = int(radius / grid.info.resolution)
+        starting_index = int(
+            current_index - ((grid.info.width * (radius / 2) / grid.info.resolution))
+        )
+        ending_index = int(
+            current_index + ((grid.info.width * (radius / 2) / grid.info.resolution))
+        )
+        for i in range(0, num_rows):
+            for j in range(0, row_width):
+                index = starting_index + (i * row_width) + j
                 points_in_radius.append({grid.data[index], index})
         return points_in_radius
 
-
-    def localize_rover(self, grid: OccupancyGrid, current_position: Tuple[float,float]) -> int:
-        starting_position = 0,0 #big assumptionß
-        column= current_position[0]/grid.info.resolution #x index position
-        row = current_position[1]/grid.info.resolution #y index position
-        current_index = int((row * grid.info.height/grid.info.resolution) + column)%1
+    def localize_rover(self, grid: OccupancyGrid, current_position: Tuple[float, float]) -> int:
+        starting_position = 0, 0  # big assumptionß
+        column = current_position[0] / grid.info.resolution  # x index position
+        row = current_position[1] / grid.info.resolution  # y index position
+        current_index = int((row * grid.info.height / grid.info.resolution) + column) % 1
         return current_index
-    
 
+    def find_index_location(
+        self, grid: OccupancyGrid, current_position: Tuple[float, float], target_index: int
+    ) -> Tuple[float, float]:
+        rover_index = self.localize_rover(grid, current_position)
+        # find row position of both items
+        rover_row = int(rover_index / grid.info.width)
+        target_row = int(target_index / grid.info.width)
+        # find column position of both items
+        rover_column = grid.info.width - (rover_index % grid.info.width)
+        target_column = grid.info.width - (target_index % grid.info.width)
+        # use the differences in those numbers to determine the position
+        col_dif = abs(target_column - rover_column)
+        row_diff = abs(rover_row - target_row)
+        if target_column >= rover_column:
+            x_position = float(current_position[0] + (col_dif * grid.info.resolution))
+        elif target_column < rover_column:
+            x_position = float(current_position[0] - (col_dif * grid.info.resolution))
+        if target_row >= rover_row:
+            y_position = float(current_position[1] - (row_diff * grid.info.resolution))
+        elif target_row < rover_row:
+            y_position = float(current_position[1] + (row_diff * grid.info.resolution))
 
-    def global_index_location(self, grid: OccupancyGrid, int index) -> Tuple[float,float]:
-        x=8
-        string="write this"
-        return (3,4)
-    
+        return (x_position, y_position)
+
     def turnTowardGoal(self, goal_Location: Tuple[float, float]) -> None:
         a = self.distance_2d(
             self.current_position[0], self.current_position[1], goal_Location[0], goal_Location[1]
