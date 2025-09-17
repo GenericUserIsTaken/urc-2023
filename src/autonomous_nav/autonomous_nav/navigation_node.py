@@ -50,7 +50,10 @@ class NavigationNode(Node):
         self.active_waypoint: Optional[Tuple[float, float]] = None
         self.current_position = (0.0, 0.0)  # x, y
         self.current_yaw = 0.0
-
+        self.current_global_yaw = 0.0
+        self.current_lat = 0.0
+        self.current_lon = 0.0
+        self.current_alt = 0.0
         # ---- Subscribers ----
         # latitude, longitude, altitude
         self.anchor_sub = self.create_subscription(
@@ -64,7 +67,7 @@ class NavigationNode(Node):
         self.odom_sub = self.create_subscription(
             Odometry, "/odometry/filtered", self.odomCallback, 10
         )
-
+        self.gps_sub = self.create_subscription(NavSatFix, "/fix", self.gpsCallback, 10)
         # TODO subscribe to the cost map right here
 
         # point ckoud data from the data processing node
@@ -104,6 +107,43 @@ class NavigationNode(Node):
                     ColorCodes.BLUE_OK,
                 )
             )
+
+    def gpsCallback(self, msg: NavSatFix) -> None:
+        if not self.anchor_received:
+            return
+        if msg.status.status >= 0 and self.current_lat == 0:
+            self.current_lat = msg.latitude
+            self.current_lon = msg.longitude
+            self.current_alt = msg.altitude
+            self.determine_global_yaw()
+        # If fix is valid (>= 0 => at least a standard fix)
+        if msg.status.status >= 0:
+            self.current_lat = msg.latitude
+            self.current_lon = msg.longitude
+            self.current_alt = msg.altitude
+        self.get_logger().info(
+            colorStr(
+                f"current position received. current_lat={self.current_lat:.6f}, "
+                f"current_lon={self.current_lon:.6f}, current_alt={self.current_alt:.2f}",
+                ColorCodes.BLUE_OK,
+            )
+        )
+
+    def determine_global_yaw(self):
+        x = math.cos(math.radians(self.current_lat)) * math.sin(
+            math.radians(self.current_lon) - math.radians(self.ref_lon)
+        )
+        y = math.cos(math.radians(self.ref_lat)) * math.sin(
+            math.radians(self.current_lat)
+        ) - math.sin(math.radians(self.ref_lat)) * math.cos(
+            math.radians(self.current_lat)
+        ) * math.cos(
+            math.radians(self.current_lon) - math.radians(self.ref_lon)
+        )
+        result = math.atan2(x, y)
+        result = result * (math.pi / 180)
+        result = (result + 360) % 360
+        self.current_global_yaw = result
 
     def processLatLonGoal(self, msg: NavSatFix) -> None:
         """
