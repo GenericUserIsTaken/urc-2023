@@ -130,7 +130,10 @@ class NavigationNode(Node):
         """
         Updates self.current_position and self.current_yaw from odometry.
         """
-        self.current_position = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+        self.current_position = (
+            msg.pose.pose.position.x,
+            msg.pose.pose.position.y,
+        )  # RELATIVE TO FRAME
         q = msg.pose.pose.orientation
         self.current_yaw = self.quaternion_to_yaw(q.x, q.y, q.z, q.w)
 
@@ -211,10 +214,10 @@ class NavigationNode(Node):
         return points_in_radius
 
     def localize_rover(self, grid: OccupancyGrid, current_position: Tuple[float, float]) -> int:
-        starting_position = 0, 0  # big assumptionß
-        column = current_position[0] / grid.info.resolution  # x index position
-        row = current_position[1] / grid.info.resolution  # y index position
-        current_index = int((row * grid.info.height / grid.info.resolution) + column) % 1
+        grid.info.origin.position.x
+        row = int((current_position[1] - grid.info.origin.position.y) / grid.info.resolution)
+        column = int((current_position[0] - grid.info.origin.position.x) / grid.info.resolution)
+        current_index = int((row * grid.info.height / grid.info.resolution) + column)
         return current_index
 
     def find_index_location(
