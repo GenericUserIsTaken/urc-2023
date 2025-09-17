@@ -129,7 +129,7 @@ class NavigationNode(Node):
             )
         )
 
-    def determine_global_yaw(self):
+    def determine_global_yaw(self) -> None:
         x = math.cos(math.radians(self.current_lat)) * math.sin(
             math.radians(self.current_lon) - math.radians(self.ref_lon)
         )
