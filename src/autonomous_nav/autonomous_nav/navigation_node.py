@@ -75,7 +75,7 @@ class NavigationNode(Node):
         # ---- Publishers ----
         self.status_pub = self.create_publisher(String, "/navigation_status", 10)
         self.feedback_pub = self.create_publisher(Pose2D, "/navigation_feedback", 10)
-
+        self.waypoint_pub = self.create_publisher(Tuple[float, float], "/waypoint", 10)
         # ---- Timers ----
         self.timer = self.create_timer(0.1, self.updateNavigation)  # 10 Hz
 
