@@ -230,15 +230,15 @@ class NavigationNode(Node):
         # localize the rover within the map to draw a boundary
         # TODO
         # attain position within costmap
-        current_index = self.localize_rover(grid, self.current_position)
+        current_index = self.position_to_index(grid, self.current_position)
         # gather points within a certain radius
         target_area = self.collect_radius(grid, current_index)
         # choose point with the lowest value
         # base value on the distance to the goal location and the cost on the map
 
-    def collect_radius(self, grid: OccupancyGrid, current_index: int) -> list[int]:
+    def collect_radius(self, grid: OccupancyGrid, current_index: int) -> list[Tuple[int, int]]:
         radius = 5
-        points_in_radius = []
+        points_in_radius: list[Tuple[int, int]] = []
         row_width = grid.info.width
         num_rows = int(radius / grid.info.resolution)
         starting_index = int(
@@ -249,39 +249,25 @@ class NavigationNode(Node):
         )
         for i in range(0, num_rows):
             for j in range(0, row_width):
-                index = starting_index + (i * row_width) + j
-                points_in_radius.append({grid.data[index], index})
+                index = int(starting_index + (i * row_width) + j)
+                data = int(grid.data[index])
+                points_in_radius.append((data, index))
         return points_in_radius
 
-    def localize_rover(self, grid: OccupancyGrid, current_position: Tuple[float, float]) -> int:
-        grid.info.origin.position.x
+    def position_to_index(self, grid: OccupancyGrid, current_position: Tuple[float, float]) -> int:
+        # this function
         row = int((current_position[1] - grid.info.origin.position.y) / grid.info.resolution)
         column = int((current_position[0] - grid.info.origin.position.x) / grid.info.resolution)
         current_index = int((row * grid.info.height / grid.info.resolution) + column)
         return current_index
 
-    def index_to_position(
-        self, grid: OccupancyGrid, current_position: Tuple[float, float], target_index: int
-    ) -> Tuple[float, float]:
-        rover_index = self.localize_rover(grid, current_position)
-        # find row position of both items
-        rover_row = int(rover_index / grid.info.width)
-        target_row = int(target_index / grid.info.width)
-        # find column position of both items
-        rover_column = grid.info.width - (rover_index % grid.info.width)
-        target_column = grid.info.width - (target_index % grid.info.width)
-        # use the differences in those numbers to determine the position
-        col_dif = abs(target_column - rover_column)
-        row_diff = abs(rover_row - target_row)
-        if target_column >= rover_column:
-            x_position = float(current_position[0] + (col_dif * grid.info.resolution))
-        elif target_column < rover_column:
-            x_position = float(current_position[0] - (col_dif * grid.info.resolution))
-        if target_row >= rover_row:
-            y_position = float(current_position[1] - (row_diff * grid.info.resolution))
-        elif target_row < rover_row:
-            y_position = float(current_position[1] + (row_diff * grid.info.resolution))
-
+    def index_to_position(self, grid: OccupancyGrid, target_index: int) -> Tuple[float, float]:
+        # find the y position relative to the map frame
+        y_position = int((target_index / grid.info.width) + grid.info.origin.position.y)
+        # find the x position relative to the map frame
+        x_position = (
+            grid.info.width - (target_index % grid.info.width) + grid.info.origin.position.x
+        )
         return (x_position, y_position)
 
     def turnTowardGoal(self, goal_Location: Tuple[float, float]) -> None:
