@@ -260,7 +260,7 @@ class NavigationNode(Node):
         current_index = int((row * grid.info.height / grid.info.resolution) + column)
         return current_index
 
-    def find_index_location(
+    def index_to_position(
         self, grid: OccupancyGrid, current_position: Tuple[float, float], target_index: int
     ) -> Tuple[float, float]:
         rover_index = self.localize_rover(grid, current_position)
