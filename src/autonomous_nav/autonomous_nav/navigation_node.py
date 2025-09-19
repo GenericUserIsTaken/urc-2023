@@ -25,9 +25,6 @@ class NavigationNode(Node):
         - Subscribes to /odometry/filtered (Odometry) for current pose.
         - Publishes /navigation_status (String) and /navigation_feedback (Pose2D).
 
-    TODO:
-        -Create a funcion that points the rover at a given gps coordinate
-
     """
 
     def __init__(self) -> None:
@@ -54,6 +51,7 @@ class NavigationNode(Node):
         self.current_lat = 0.0
         self.current_lon = 0.0
         self.current_alt = 0.0
+        self.end_goal_waypoint: Optional[Tuple[float, float]] = None
         # ---- Subscribers ----
         # latitude, longitude, altitude
         self.anchor_sub = self.create_subscription(
@@ -70,8 +68,6 @@ class NavigationNode(Node):
         self.gps_sub = self.create_subscription(NavSatFix, "/fix", self.gpsCallback, 10)
         # TODO subscribe to the cost map right here
 
-        # point ckoud data from the data processing node
-        self.could_sub = self.create_subscription(Float32MultiArray, "/processed_cloud", 10)
         # ---- Publishers ----
         self.status_pub = self.create_publisher(String, "/navigation_status", 10)
         self.feedback_pub = self.create_publisher(Pose2D, "/navigation_feedback", 10)
