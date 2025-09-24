@@ -229,8 +229,22 @@ class NavigationNode(Node):
         current_index = self.position_to_index(grid, self.current_position)
         # gather points within a certain radius
         target_area = self.collect_radius(grid, current_index)
-        # choose point with the lowest value
-        # base value on the distance to the goal location and the cost on the map
+        minmium_point = 1000
+
+        # choose point with the lowest value within target area
+        for item in target_area:
+            if (
+                item.count
+                + self.distance_2d(
+                    item.count[0],
+                    item.count[1],
+                    self.end_goal_waypoint[0],
+                    self.end_goal_waypoint[2],
+                )
+                < minmium_point
+            ):
+                minimum_point = item
+        # add that to the queue until you find the goal position (use an if statement to check of the heuristic is 0 and if so, choose it, send to coord, and break)
 
     def collect_radius(self, grid: OccupancyGrid, current_index: int) -> list[Tuple[int, int]]:
         radius = 5
