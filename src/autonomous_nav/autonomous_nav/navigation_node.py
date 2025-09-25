@@ -51,7 +51,9 @@ class NavigationNode(Node):
         self.current_lat = 0.0
         self.current_lon = 0.0
         self.current_alt = 0.0
-        self.end_goal_waypoint: Optional[Tuple[float, float]] = None
+        self.end_goal_waypoint: Tuple[float, float]
+        self.path: Queue[Tuple[float, float]]
+        self.global_costmap: OccupancyGrid
         # ---- Subscribers ----
         # latitude, longitude, altitude
         self.anchor_sub = self.create_subscription(
@@ -66,12 +68,16 @@ class NavigationNode(Node):
             Odometry, "/odometry/filtered", self.odomCallback, 10
         )
         self.gps_sub = self.create_subscription(NavSatFix, "/fix", self.gpsCallback, 10)
+
+        self.global_costmap_subscription = self.create_subscription(
+            OccupancyGrid, "/global_costmap/costmap", self.costmap_callback, 10
+        )
         # TODO subscribe to the cost map right here
 
         # ---- Publishers ----
         self.status_pub = self.create_publisher(String, "/navigation_status", 10)
         self.feedback_pub = self.create_publisher(Pose2D, "/navigation_feedback", 10)
-        self.waypoint_pub = self.create_publisher(Tuple[float, float], "/waypoint", 10)
+        self.path_pub = self.create_publisher(Queue[Tuple[float, float]], "/path", 10)
         # ---- Timers ----
         self.timer = self.create_timer(0.1, self.updateNavigation)  # 10 Hz
 
@@ -173,6 +179,12 @@ class NavigationNode(Node):
         q = msg.pose.pose.orientation
         self.current_yaw = self.quaternion_to_yaw(q.x, q.y, q.z, q.w)
 
+    def costmap_callback(self, msg: OccupancyGrid) -> None:
+        self.get_logger().info(f"Received costmap: {msg.info.width} x {msg.info.height}")
+        self.global_costmap = msg
+        # Example: check first 10 cells
+        print(msg.data[:10])
+
     # ----------------------
     #   Main Navigation Logic
     # ----------------------
@@ -199,55 +211,70 @@ class NavigationNode(Node):
             self.publishStatus(f"Successfully reached waypoint ({goal_x:.2f}, {goal_y:.2f})")
             self.active_waypoint = None
             return
-
+        else:
+            self.planPath(self.global_costmap)
         self.publishStatus(f"En route to waypoint ({goal_x:.2f}, {goal_y:.2f})")
         self.publishFeedback(goal_x, goal_y)
 
     def planPath(
         self,
-        goal_location: Tuple[float, float],
-        path: Queue,
         grid: OccupancyGrid,
     ) -> None:
         path_radius = 5
         grid_height = grid.info.height
         grid_width = grid.info.width
         grid_origin = grid.info.origin  # global coordinates of origin
-        self.ref_lat  # x
-        self.ref_lon  # y
-
-        # cycle through a costmap and assign each point within a 5 meter radius a certain value (heuristic)
-        # add the point with the lowest value to the path queue
-        # heuristic  (cartesian distance to the point) - costmap value
-        #  expensive:  run through whole aarray
-        # cheap : only look at point that get you closer to the goal location and are within 5 meters
-        # task: make an algorithm that filters out all points farther than 5 meters and thet
-
-        # localize the rover within the map to draw a boundary
-        # TODO
-        # attain position within costmap
+        """
+        This algorithm looks at the global occupancy grid in order to plan a path through it for the rover using an A* style search algorithm. 
+        """
+        # attain current position within costmap
         current_index = self.position_to_index(grid, self.current_position)
         # gather points within a certain radius
-        target_area = self.collect_radius(grid, current_index)
-        minmium_point = 1000
-
-        # choose point with the lowest value within target area
-        for item in target_area:
-            if (
-                item.count
-                + self.distance_2d(
-                    item.count[0],
-                    item.count[1],
+        # TODO make target collect radius return only the indicies
+        # TODO filter out unkmow positions?
+        search_radius: int = 5
+        target_area: list[Tuple[int, int]] = self.collect_radius(
+            grid, current_index, search_radius
+        )  # list[Tuple[int,int]] corresponding to the index within the occupancy grid and the cost of that point in the index
+        minmium_cost = 1000.0
+        minimum_position: Tuple[float, float] = (
+            self.current_position
+        )  # the lowest cost position (AKA the position we will add next)
+        while (
+            self.distance_2d(
+                minimum_position[0],
+                minimum_position[1],
+                self.current_position[0],
+                self.current_position[1],
+            )
+            > 1
+        ):
+            # choose point with the lowest value within target area
+            for item in target_area:
+                item_position = self.index_to_position(grid, item[0])
+                item_cost = item[1] + self.distance_2d(
+                    item_position[0],
+                    item_position[1],
                     self.end_goal_waypoint[0],
-                    self.end_goal_waypoint[2],
-                )
-                < minmium_point
-            ):
-                minimum_point = item
+                    self.end_goal_waypoint[1],
+                )  # item cost is the cost from the occupancy grid (item[1]) + distance to the goal
+                if item_cost < minmium_cost and item_cost != 100:
+                    minimum_position = item_position
+                    self.path.put(item_position)
+                    if item_cost == -1:
+                        self.publishStatus(
+                            f"position ({item_position[0]:.2f}, {item_position[1]:.2f}) has been chosen as unknown)"
+                        )
+                else:
+                    self.publishStatus(
+                        f"position ({item_position[0]:.2f}, {item_position[1]:.2f}) has cost of ({item_cost})"
+                    )
+        self.path_pub.publish(self.path)
         # add that to the queue until you find the goal position (use an if statement to check of the heuristic is 0 and if so, choose it, send to coord, and break)
 
-    def collect_radius(self, grid: OccupancyGrid, current_index: int) -> list[Tuple[int, int]]:
-        radius = 5
+    def collect_radius(
+        self, grid: OccupancyGrid, current_index: int, radius: int
+    ) -> list[Tuple[int, int]]:
         points_in_radius: list[Tuple[int, int]] = []
         row_width = grid.info.width
         num_rows = int(radius / grid.info.resolution)
@@ -260,8 +287,9 @@ class NavigationNode(Node):
         for i in range(0, num_rows):
             for j in range(0, row_width):
                 index = int(starting_index + (i * row_width) + j)
-                data = int(grid.data[index])
-                points_in_radius.append((data, index))
+                if index < len(grid.data):
+                    data = int(grid.data[index])
+                    points_in_radius.append((data, index))
         return points_in_radius
 
     def position_to_index(self, grid: OccupancyGrid, current_position: Tuple[float, float]) -> int:
