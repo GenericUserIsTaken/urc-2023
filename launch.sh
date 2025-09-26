@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 source /opt/ros/$ROS_DISTRO/setup.bash
-source /home/trickfire/jake-urc-2023/urc-2023/install/setup.bash
+source /home/trickfire/jake-voxel-urc/urc-2023/install/setup.bash
 
 #modprobe can
 #modprobe can_raw
@@ -10,6 +10,6 @@ source /home/trickfire/jake-urc-2023/urc-2023/install/setup.bash
 #ip link set can0 up
 
 # Add to the python import pathes. Not the best, but will work for now
-export PYTHONPATH="/home/trickfire/jake-urc-2023/urc-2023/src/:$PYTHONPATH"
+export PYTHONPATH="/home/trickfire/jon-urc-2025/urc-2023/src/:$PYTHONPATH"
 
-ros2 launch viator_launch robot.launch.py   
+ros2 launch viator_launch robot.launch.py
