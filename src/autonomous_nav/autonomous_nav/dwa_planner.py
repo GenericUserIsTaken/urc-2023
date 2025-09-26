@@ -1,8 +1,11 @@
 import math
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import numpy as np
 from nav2_simple_commander.costmap_2d import PyCostmap2D
+
+# if TYPE_CHECKING:
+#     from nav2_simple_commander.costmap_2d import PyCostmap2D
 
 
 class Trajectory:
@@ -20,61 +23,91 @@ class Trajectory:
         self.angular_vel = angular_vel
         self.points = points if points is not None else []
         self.cost = float("inf")
-        self.heading_cost_factor: float = 2.0
+
+        # Cost weights for different objectives
+        self.obstacle_cost_weight = 5.0
+        self.goal_cost_weight = 1.0
+        self.velocity_cost_weight = 0.5
+        self.heading_cost_weight = 2.0
 
     def add_point(self, x: float, y: float, theta: float) -> None:
         """Add a point to the trajectory."""
         self.points.append((x, y, theta))
 
-    def set_velocity(self, velocity: Tuple[float, float]) -> None:
-        """Sets the velocity of the trajectory"""
-        self.velocity = velocity
+    def evaluate_trajectory(
+        self,
+        costmap: PyCostmap2D,
+        goal: Tuple[float, float],
+        max_linear_vel: float,
+        robot_radius: float,
+    ) -> bool:
+        """
+        Evaluate trajectory and compute its total cost.
+        Returns False if trajectory collides with obstacles.
+        """
+        if not self.points:
+            return False
 
-    def is_valid(self, costmap: PyCostmap2D) -> bool:
-        """
-        Checks if trajectory object should be removed by checking against points in grid
-        Returns false if there is a collision.
-        """
-        total_cost: int = 0  # use python int to avoid int8 overflow during accumulation
+        # Initialize cost components
+        obstacle_cost = 0.0
+        min_obstacle_distance = float("inf")
+
+        # Check collision and compute obstacle cost
         for point in self.points:
-            x, y = int(point[0]), int(point[1])
-            cost = costmap.getCostXY(x, y)
-            total_cost += int(cost)
-            if cost > np.int8(100):
-                return False
+            x, y, _ = point
 
-        self.cost = total_cost
+            # Check points around robot radius for better collision detection
+            for dx in [-robot_radius, 0, robot_radius]:
+                for dy in [-robot_radius, 0, robot_radius]:
+                    check_x = int(x + dx)
+                    check_y = int(y + dy)
+
+                    # Get cost from costmap
+                    cost: float = float(costmap.getCostXY(check_x, check_y))
+
+                    # Check for collision (lethal obstacle)
+                    if cost >= 253:  # LETHAL_OBSTACLE threshold
+                        return False
+
+                    # Accumulate obstacle proximity cost
+                    if cost > 0:
+                        obstacle_cost += cost
+                        min_obstacle_distance = min(min_obstacle_distance, cost / 252.0)
+
+        # Goal distance cost (distance from final position to goal)
+        final_x, final_y, final_theta = self.points[-1]
+        goal_distance = math.sqrt((final_x - goal[0]) ** 2 + (final_y - goal[1]) ** 2)
+        goal_cost = goal_distance
+
+        # Heading cost (prefer trajectories that face the goal)
+        goal_angle = math.atan2(goal[1] - final_y, goal[0] - final_x)
+        heading_diff = abs(self.normalize_angle(goal_angle - final_theta))
+        heading_cost = heading_diff
+
+        # Velocity cost (prefer higher velocities when safe)
+        velocity_cost = (max_linear_vel - abs(self.linear_vel)) / max_linear_vel
+
+        # Compute total weighted cost
+        self.cost = (
+            self.obstacle_cost_weight * obstacle_cost / len(self.points)
+            + self.goal_cost_weight * goal_cost
+            + self.heading_cost_weight * heading_cost
+            + self.velocity_cost_weight * velocity_cost
+        )
 
         return True
 
-    def compare_costs(self, other: "Trajectory") -> float:
-        """
-        Compare the cost of this trajectory with another trajectory.
+    @staticmethod
+    def normalize_angle(angle: float) -> float:
+        """Normalize angle to [-pi, pi] range."""
+        while angle > math.pi:
+            angle -= 2 * math.pi
+        while angle < -math.pi:
+            angle += 2 * math.pi
+        return angle
 
-        Args:
-            other: Another Trajectory object to compare against
 
-        Returns:
-            Negative if this trajectory is cheaper, positive if more expensive, 0 if equal
-        """
-        if not isinstance(other, Trajectory):
-            raise TypeError("Other object is not a Trajectory")
-
-        return self.cost - other.cost
-
-    def apply_heading_cost(self) -> None:
-        """
-        Apply a heading cost to the trajectory based on its final heading.
-
-        Args:
-            trajectory: The Trajectory object to modify
-
-        Returns:
-            The modified cost of the trajectory
-        """
-        heading = self.points[9].theta
-        heading_cost = abs(heading) * self.heading_cost_factor
-        self.cost += heading_cost
+"""" Might need major changes. Implementation uses rolling window costmap 2D. """
 
 
 class DWAPlanner:
@@ -104,6 +137,10 @@ class DWAPlanner:
         self.wheel_base = 0.5  # Distance between left and right wheels in meters
         self.wheel_radius = 0.11  # Radius of wheels in meters
 
+        # Gear ratio or encoder scaling factor
+        # This converts between motor commands and actual wheel velocities
+        self.wheel_vel_scaling = 1.0  # Adjust based on your hardware
+
         # Velocity limits (in m/s and rad/s)
         self.max_linear_vel = 1.0  # Maximum forward velocity
         self.min_linear_vel = -0.5  # Maximum backward velocity (negative)
@@ -114,9 +151,12 @@ class DWAPlanner:
         self.max_angular_accel = 1.0
 
         # DWA parameters
-        self.prediction_time = 3.0  # How far ahead to simulate trajectories
+        self.prediction_time = 2.0  # How far ahead to simulate trajectories
         self.linear_vel_samples = 11  # Number of linear velocity samples
         self.angular_vel_samples = 21  # Number of angular velocity samples
+
+        # Minimum trajectory points for valid evaluation
+        self.min_trajectory_points = 10
 
     def plan(self) -> Tuple[float, float]:
         """
@@ -125,7 +165,6 @@ class DWAPlanner:
         Returns:
             (left_wheel_vel, right_wheel_vel) in rad/s
         """
-
         # Convert current wheel velocities to robot velocities
         current_velocities: Tuple[float, float] = self.wheel_to_robot_velocities(
             self.current_wheel_vel
@@ -137,43 +176,31 @@ class DWAPlanner:
         # Get velocity samples
         velocity_samples = self.generate_velocity_samples(dynamic_window)
 
-        # Generate all trajectory candidates
-        trajectories = self.generate_trajectories(velocity_samples)
+        # Generate and evaluate all trajectory candidates
+        valid_trajectories = []
+        for linear_vel, angular_vel in velocity_samples:
+            trajectory = self.simulate_trajectory(linear_vel, angular_vel)
 
-        if not trajectories:
-            # Emergency stop if no trajectories generated
+            # Evaluate trajectory (computes cost and checks collisions)
+            if trajectory.evaluate_trajectory(
+                self.costmap, self.goal, self.max_linear_vel, self.robot_radius
+            ):
+                valid_trajectories.append(trajectory)
+
+        if not valid_trajectories:
+            # Emergency stop if no valid trajectories
             return (0.0, 0.0)
 
-        # Factor in heading cost to tracjetory costs
-        self.apply_heading_costs(trajectories)
-
-        # Single out the cheapest trajectory.
-        best_trajectory: Trajectory = self.get_cheapest_trajectory(trajectories)
+        # Select the best trajectory (lowest cost)
+        best_trajectory = min(valid_trajectories, key=lambda t: t.cost)
 
         # Convert the best trajectory's velocities back to wheel velocities
         left_wheel, right_wheel = self.robot_to_wheel_velocities(
             best_trajectory.linear_vel, best_trajectory.angular_vel
         )
 
-        return (left_wheel / 15.7, right_wheel / 15.7)
-
-    def generate_trajectories(
-        self, velocity_samples: List[Tuple[float, float]]
-    ) -> List[Trajectory]:
-        """
-        Generate all trajectory candidates within the dynamic window.
-
-        Returns:
-            List of Trajectory objects
-        """
-        trajectories = []
-
-        # Generate trajectory for each velocity sample
-        for linear_vel, angular_vel in velocity_samples:
-            trajectory = self.simulate_trajectory(linear_vel, angular_vel)
-            trajectories.append(trajectory)
-
-        return trajectories
+        # Apply scaling factor for motor commands
+        return (left_wheel * self.wheel_vel_scaling, right_wheel * self.wheel_vel_scaling)
 
     def wheel_to_robot_velocities(self, wheel_vels: Tuple[float, float]) -> Tuple[float, float]:
         """
@@ -231,7 +258,7 @@ class DWAPlanner:
         Returns:
             Normalized angle in [-pi, pi]
         """
-        while angle >= math.pi:
+        while angle > math.pi:
             angle -= 2 * math.pi
         while angle < -math.pi:
             angle += 2 * math.pi
@@ -300,11 +327,9 @@ class DWAPlanner:
         Returns:
             (min_linear_vel, max_linear_vel, min_angular_vel, max_angular_vel)
         """
-        # Calculate reachable velocities within one time step
-        # Linear velocity window
-
         current_linear, current_angular = current_velocities
 
+        # Calculate reachable velocities within one time step
         min_linear = max(
             current_linear - self.max_linear_accel * self.time_delta, self.min_linear_vel
         )
@@ -345,7 +370,7 @@ class DWAPlanner:
         if max_w > min_w:
             angular_samples = np.linspace(min_w, max_w, self.angular_vel_samples)
         else:
-            angular_samples = np.array([max_w])
+            angular_samples = np.array([min_w])
 
         # Create all combinations
         for v in linear_samples:
@@ -353,24 +378,3 @@ class DWAPlanner:
                 velocity_samples.append((v, w))
 
         return velocity_samples
-
-    def remove_invalid_trajectories(self, trajectories: list[Trajectory]) -> None:
-        for trajectory in trajectories:
-            if not trajectory.is_valid(self.costmap):
-                trajectories.remove(trajectory)
-
-    def get_cheapest_trajectory(self, trajectories: list[Trajectory]) -> Trajectory:
-        """
-        Find the trajectory with the lowest cost from a list of trajectories.
-
-        Args:
-            trajectories: List of Trajectory objects to compare
-
-        Returns:
-            The trajectory with the lowest cost
-        """
-        return min(trajectories, key=lambda trajectory: trajectory.cost)
-
-    def apply_heading_costs(self, trajectories: list[Trajectory]) -> None:
-        for trajectory in trajectories:
-            trajectory.apply_heading_cost()

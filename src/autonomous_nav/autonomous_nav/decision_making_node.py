@@ -9,7 +9,8 @@ Functionality:
 """
 
 import sys
-from typing import Optional
+from queue import Queue
+from typing import Optional, Tuple
 
 import rclpy
 from geometry_msgs.msg import Pose2D
@@ -17,7 +18,7 @@ from nav2_simple_commander.costmap_2d import PyCostmap2D
 from nav_msgs.msg import OccupancyGrid
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from std_msgs.msg import Bool, Float32, Float32MultiArray, String
+from std_msgs.msg import Bool, Float32, String
 
 from lib.color_codes import ColorCodes, colorStr
 
@@ -49,7 +50,7 @@ class DecisionMakingNode(Node):
         super().__init__("decision_making_node")
 
         # ---- State Variables ----
-        self.obstacle_detected: bool = False
+        # self.obstacle_detected: bool = False
         # Change obstacle_info to be Nav2 Costmap 2D data.
         self.obstacle_info: Optional[PyCostmap2D] = None
 
@@ -62,11 +63,13 @@ class DecisionMakingNode(Node):
         self.avoid_start_time = self.get_clock().now()
 
         # ---- Subscribers ----
-        self.create_subscription(Bool, "/obstacle_detected", self.obstacle_callback, 10)
+        # self.create_subscription(Bool, "/obstacle_detected", self.obstacle_callback, 10)
         self.create_subscription(OccupancyGrid, "/costmap", self.obstacle_info_callback, 10)
-        self.create_subscription(String, "/navigation_status", self.navStatusCallback, 10)
+        self.create_subscription(String, "/navigation_status", self.nav_status_callback, 10)
         # gives us the angle and position of the rover
         self.create_subscription(Pose2D, "/navigation_feedback", self.nav_feedback_callback, 10)
+        self.create_subscription(Tuple[float, float], "/waypoint", self.waypoint_callback, 10)
+        self.create_subscription(Queue[Tuple[float, float]], "/path", 10)
 
         # ---- Publishers (to Drivebase) ----
         self.left_drive_pub = self.create_publisher(Float32, "move_left_drivebase_side_message", 10)
@@ -88,7 +91,7 @@ class DecisionMakingNode(Node):
     def obstacle_info_callback(self, msg: OccupancyGrid) -> None:
         self.obstacle_info = PyCostmap2D(msg)
 
-    def navStatusCallback(self, msg: String) -> None:
+    def nav_status_callback(self, msg: String) -> None:
         self.navigation_status = msg.data
         # self.get_logger().info(
         #     colorStr(f"Navigation Status: {self.navigation_status}", ColorCodes.YELLOW_WARN)
@@ -96,6 +99,13 @@ class DecisionMakingNode(Node):
 
     def nav_feedback_callback(self, msg: Pose2D) -> None:
         self.nav_feedback = msg
+
+    def waypoint_callback(self, msg: Tuple[float, float]) -> None:
+        self.goal = msg
+        self.current_pos = (self.nav_feedback.x, self.nav_feedback.y)
+        self.current_theta = self.nav_feedback.theta
+        # For simplicity, assume current wheel velocities are zero.
+        self.current_wheel_vel = (0.0, 0.0)
 
     # --------------------------------------------------------------------------
     #   Main Decision Logic
