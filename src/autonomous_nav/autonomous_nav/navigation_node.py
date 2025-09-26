@@ -244,15 +244,15 @@ class NavigationNode(Node):
             self.distance_2d(
                 minimum_position[0],
                 minimum_position[1],
-                self.current_position[0],
-                self.current_position[1],
+                self.end_goal_waypoint[0],
+                self.end_goal_waypoint[1],
             )
             > 1
         ):
             # choose point with the lowest value within target area
             for item in target_area:
-                item_position = self.index_to_position(grid, item[0])
-                item_cost = item[1] + self.distance_2d(
+                item_position = self.index_to_position(grid, item[1])
+                item_cost = item[0] + self.distance_2d(
                     item_position[0],
                     item_position[1],
                     self.end_goal_waypoint[0],
@@ -293,19 +293,17 @@ class NavigationNode(Node):
         return points_in_radius
 
     def position_to_index(self, grid: OccupancyGrid, current_position: Tuple[float, float]) -> int:
-        # this function
+        # this function takes in the occupancy grid and an index within in it, and returns the map coordinates of that point
         row = int((current_position[1] - grid.info.origin.position.y) / grid.info.resolution)
         column = int((current_position[0] - grid.info.origin.position.x) / grid.info.resolution)
-        current_index = int((row * grid.info.height / grid.info.resolution) + column)
+        current_index = int((row * grid.info.width) + column)
         return current_index
 
     def index_to_position(self, grid: OccupancyGrid, target_index: int) -> Tuple[float, float]:
-        # find the y position relative to the map frame
-        y_position = int((target_index / grid.info.width) + grid.info.origin.position.y)
-        # find the x position relative to the map frame
-        x_position = (
-            grid.info.width - (target_index % grid.info.width) + grid.info.origin.position.x
-        )
+        row = target_index // grid.info.resolution
+        col = target_index % grid.info.resolution
+        x_position = grid.info.origin.position.x + (col + 0.5) * grid.info.resolution
+        y_position = grid.info.origin.position.y + (row + 0.5) * grid.info.resolution
         return (x_position, y_position)
 
     def turnTowardGoal(self, goal_Location: Tuple[float, float]) -> None:
