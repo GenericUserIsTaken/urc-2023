@@ -15,6 +15,7 @@ ros2 run octomap_server octomap_server_node --ros-args \
   -p resolution:=0.05 \
   -p frame_id:=map \
   -p latch:=true \
+  -p publish_2d_map:=true \
   -p visualize_free_space:=true &
 
 # Add to the python import pathes
