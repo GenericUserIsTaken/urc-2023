@@ -34,6 +34,8 @@ RUN apt-get update && apt-get install -y \
   libopencv-dev \
   python3-opencv \
   libzed-sdk4.0 \
+  #install gazebo simulation software
+  ros-humble-ros-gz\
   # Clean out the apt lists after `apt-get update`
   && rm -rf /var/lib/apt/lists/*
 
