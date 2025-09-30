@@ -16,6 +16,9 @@ import rclpy
 from geometry_msgs.msg import Pose2D
 from nav2_simple_commander.costmap_2d import PyCostmap2D
 from nav_msgs.msg import OccupancyGrid
+
+# import numpy as np
+from numpy import int8, ndarray, zeros
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Bool, Float32, String
@@ -129,6 +132,9 @@ class DecisionMakingNode(Node):
     def handle_obstacle_avoidance(self) -> None:
         if self.obstacle_info is not None:
             # Create DWA Planner with costmap
+
+            obstacles = self.convert_costmap_to_grid(self.obstacle_info)
+
             dwa_planner = DWAPlanner(
                 costmap=self.obstacle_info,
                 robot_radius=0.3,
@@ -166,6 +172,24 @@ class DecisionMakingNode(Node):
         Returns +1.0 if value >= 0.0, else -1.0.
         """
         return 1.0 if value >= 0.0 else -1.0
+
+    @staticmethod
+    def convert_costmap_to_grid(costmap: PyCostmap2D) -> ndarray:
+        """
+        Converts a PyCostmap2D to a 2D grid representation.
+        """
+        width = costmap.getSizeInCellsX()
+        height = costmap.getSizeInCellsY()
+
+        grid: ndarray = zeros((width, height), dtype=int8)
+
+        # grid = [[0 for _ in range(width)] for _ in range(height)]
+
+        for y in range(height):
+            for x in range(width):
+                grid[x][y] = costmap.getCostXY(x, y)
+
+        return grid
 
 
 def main(args: list[str] | None = None) -> None:

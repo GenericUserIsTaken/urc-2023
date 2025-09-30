@@ -45,34 +45,13 @@ class Trajectory:
         Evaluate trajectory and compute its total cost.
         Returns False if trajectory collides with obstacles.
         """
-        if not self.points:
-            return False
 
-        # Initialize cost components
-        obstacle_cost = 0.0
-        min_obstacle_distance = float("inf")
+        costmap_np = costmap.get_data()
 
-        # Check collision and compute obstacle cost
-        for point in self.points:
-            x, y, _ = point
-
-            # Check points around robot radius for better collision detection
-            for dx in [-robot_radius, 0, robot_radius]:
-                for dy in [-robot_radius, 0, robot_radius]:
-                    check_x = int(x + dx)
-                    check_y = int(y + dy)
-
-                    # Get cost from costmap
-                    cost: float = float(costmap.getCostXY(check_x, check_y))
-
-                    # Check for collision (lethal obstacle)
-                    if cost >= 253:  # LETHAL_OBSTACLE threshold
-                        return False
-
-                    # Accumulate obstacle proximity cost
-                    if cost > 0:
-                        obstacle_cost += cost
-                        min_obstacle_distance = min(min_obstacle_distance, cost / 252.0)
+        for x, y, _ in self.points:
+            i, j = self._world_to_costmap(x, y, origin, resolution)
+            if costmap_np[i, j] >= 253:  # Actually checks the numpy array
+                return False
 
         # Goal distance cost (distance from final position to goal)
         final_x, final_y, final_theta = self.points[-1]
