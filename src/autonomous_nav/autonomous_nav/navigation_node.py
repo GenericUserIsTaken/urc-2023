@@ -182,7 +182,7 @@ class NavigationNode(Node):
     def costmap_callback(self, msg: OccupancyGrid) -> None:
         self.get_logger().info(f"Received costmap: {msg.info.width} x {msg.info.height}")
         self.global_costmap = msg
-        # Example: check first 10 cells
+        # check first 10 cells
         print(msg.data[:10])
 
     # ----------------------
