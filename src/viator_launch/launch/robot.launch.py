@@ -105,7 +105,7 @@ navsat_transform = Node(
 
 octomap_node = Node(
     package="octomap_server",
-    executable="octomap_server",
+    executable="octomap_server_node",
     name="octomap_server",
     output="screen",
     remappings=[("/points", "/zed/zed_node/point_cloud/cloud_registered")],
