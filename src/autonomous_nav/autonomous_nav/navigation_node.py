@@ -1,11 +1,11 @@
 import math
 import sys
 from queue import Queue
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import rclpy
-from geometry_msgs.msg import Pose2D
-from nav_msgs.msg import OccupancyGrid, Odometry
+from geometry_msgs.msg import Pose2D, PoseStamped
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import NavSatFix
@@ -52,7 +52,7 @@ class NavigationNode(Node):
         self.current_lon = 0.0
         self.current_alt = 0.0
         self.end_goal_waypoint: Tuple[float, float]
-        self.path: Queue[Tuple[float, float]]
+        self.path: Path
         self.global_costmap: OccupancyGrid
         # ---- Subscribers ----
         # latitude, longitude, altitude
@@ -77,7 +77,7 @@ class NavigationNode(Node):
         # ---- Publishers ----
         self.status_pub = self.create_publisher(String, "/navigation_status", 10)
         self.feedback_pub = self.create_publisher(Pose2D, "/navigation_feedback", 10)
-        self.path_pub = self.create_publisher(Queue[Tuple[float, float]], "/path", 10)
+        self.path_pub = self.create_publisher(Path, "/path", 10)
         # ---- Timers ----
         self.timer = self.create_timer(0.1, self.updateNavigation)  # 10 Hz
 
@@ -260,7 +260,8 @@ class NavigationNode(Node):
                 )  # item cost is the cost from the occupancy grid (item[1]) + distance to the goal
                 if item_cost < minmium_cost and item_cost != 100:
                     minimum_position = item_position
-                    self.path.put(item_position)
+                    target_area = self.collect_radius(grid, item[1], 5)
+                    self.append_path(item_position[0], item_position[1])
                     if item_cost == -1:
                         self.publishStatus(
                             f"position ({item_position[0]:.2f}, {item_position[1]:.2f}) has been chosen as unknown)"
@@ -270,7 +271,18 @@ class NavigationNode(Node):
                         f"position ({item_position[0]:.2f}, {item_position[1]:.2f}) has cost of ({item_cost})"
                     )
         self.path_pub.publish(self.path)
+
         # add that to the queue until you find the goal position (use an if statement to check of the heuristic is 0 and if so, choose it, send to coord, and break)
+
+    def append_path(self, x: float, y: float) -> None:
+        msg = Path()
+        msg.header.frame_id = "map"
+        pose = PoseStamped()
+        pose.header.frame_id = "map"
+        pose.pose.position.x = x
+        pose.pose.position.y = y
+        pose.pose.orientation.w = 1.0
+        msg.poses.append(pose)
 
     def collect_radius(
         self, grid: OccupancyGrid, current_index: int, radius: int
