@@ -104,7 +104,7 @@ navsat_transform = Node(
 )
 
 octomap_node = Node(
-    package="octomap_server2",
+    package="octomap_server",
     executable="octomap_server",
     name="octomap_server",
     output="screen",
