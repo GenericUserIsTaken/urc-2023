@@ -21,13 +21,14 @@ from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Float32, String
-from tf_transformations import euler_from_quaternion
+from tf_transformations import euler_from_quaternion  # Currently not working in Dockerfile
 
 from lib.color_codes import ColorCodes, colorStr
 
 from .dwa_planner import DWAPlanner
 
-# from transforms3d.euler import quat2euler
+# Alternative library than tf_transformations - currently not working in Dockerfile
+# from transforms3d.euler import quat2euler 
 
 
 class DecisionMakingNode(Node):
@@ -108,7 +109,8 @@ class DecisionMakingNode(Node):
         _, _, self.global_theta = euler_from_quaternion(
             [orientation.x, orientation.y, orientation.z, orientation.w]
         )
-        # transforms3d uses wxyz order for quaternions
+        # transforms3d uses wxyz order for quaternions - alternative library - currently not working
+        # in Dockerfile
         # _, _, self.global_theta = quat2euler(
         #     [orientation.w, orientation.x, orientation.y, orientation.z], 'sxyz'
         # )
