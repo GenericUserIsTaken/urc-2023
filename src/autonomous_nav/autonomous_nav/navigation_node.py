@@ -251,7 +251,9 @@ class NavigationNode(Node):
         ):
             # choose point with the lowest value within target area
             for item in target_area:
-                item_position = self.index_to_position(grid, item[1])
+                item_position = self.index_to_position(
+                    grid, item[1]
+                )  # the x,y position of a point currently in the target area
                 item_cost = item[0] + self.distance_2d(
                     item_position[0],
                     item_position[1],
@@ -260,8 +262,12 @@ class NavigationNode(Node):
                 )  # item cost is the cost from the occupancy grid (item[1]) + distance to the goal
                 if item_cost < minmium_cost and item_cost != 100:
                     minimum_position = item_position
-                    target_area = self.collect_radius(grid, item[1], 5)
-                    self.append_path(item_position[0], item_position[1])
+                    target_area = self.collect_radius(
+                        grid, item[1], 5
+                    )  # collect everything within a 2.5 meter radius of the new minimum point
+                    self.append_path(
+                        item_position[0], item_position[1]
+                    )  # add this new minmum cost point to our path
                     if item_cost == -1:
                         self.publishStatus(
                             f"position ({item_position[0]:.2f}, {item_position[1]:.2f}) has been chosen as unknown)"
@@ -275,14 +281,13 @@ class NavigationNode(Node):
         # add that to the queue until you find the goal position (use an if statement to check of the heuristic is 0 and if so, choose it, send to coord, and break)
 
     def append_path(self, x: float, y: float) -> None:
-        msg = Path()
-        msg.header.frame_id = "map"
+        self.path.header.frame_id = "map"
         pose = PoseStamped()
         pose.header.frame_id = "map"
         pose.pose.position.x = x
         pose.pose.position.y = y
         pose.pose.orientation.w = 1.0
-        msg.poses.append(pose)
+        self.path.poses.append(pose)
 
     def collect_radius(
         self, grid: OccupancyGrid, current_index: int, radius: int
