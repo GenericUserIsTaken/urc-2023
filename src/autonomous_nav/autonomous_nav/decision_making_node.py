@@ -8,22 +8,27 @@ Functionality:
     - Publishes commands to the drivebase to move or stop.
 """
 
+import math
 import sys
 from queue import Queue
-from typing import Optional, Tuple
-import math
+from typing import List, Optional, Tuple
 
 import rclpy
-from rclpy.executors import ExternalShutdownException
+from nav2_simple_commander.costmap_2d import PyCostmap2D
+
 # from geometry_msgs.msg import Pose2D, PoseStamped
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Float32, String
-from nav2_simple_commander.costmap_2d import PyCostmap2D
-from tf_transformations import euler_from_quaternion  # pip install transformations
+from tf_transformations import euler_from_quaternion
+
 from lib.color_codes import ColorCodes, colorStr
 
 from .dwa_planner import DWAPlanner
+
+# from transforms3d.euler import quat2euler
+
 
 class DecisionMakingNode(Node):
     def __init__(self) -> None:
@@ -45,8 +50,8 @@ class DecisionMakingNode(Node):
         self.last_left_vel = 0.0
         self.last_right_vel = 0.0
 
-        # Waypoint queue (stores waypoints in global frame)
-        self.waypoint_queue = Queue(maxsize=10)
+        # Waypoint queue (stores waypoints in global frame)  - Updated to Path message
+        self.waypoint_queue = Path().poses
         self.waypoint_reached_threshold = 0.5  # meters
 
         # Costmap
@@ -62,47 +67,28 @@ class DecisionMakingNode(Node):
 
         # Odometry for global pose tracking
         self.create_subscription(
-            Odometry,
-            '/odometry/filtered',  # or '/odom'
-            self.odometry_callback,
-            10
+            Odometry, "/odometry/filtered", self.odometry_callback, 10  # or '/odom'
         )
 
         # Costmap (rolling window)
         self.create_subscription(
-            OccupancyGrid,
-            '/local_costmap/costmap',  # or '/costmap'
-            self.costmap_callback,
-            10
+            OccupancyGrid, "/local_costmap/costmap", self.costmap_callback, 10  # or '/costmap'
         )
 
         # Waypoint path (queue of waypoints)
         self.create_subscription(
-            Path,
-            '/planned_path',  # Navigation node publishes this
-            self.path_callback,
-            10
+            Path, "/planned_path", self.path_callback, 10  # Navigation node publishes this
         )
 
         # Navigation status
-        self.create_subscription(
-            String,
-            '/navigation_status',
-            self.nav_status_callback,
-            10
-        )
+        self.create_subscription(String, "/navigation_status", self.nav_status_callback, 10)
 
         # ===== PUBLISHERS =====
 
-        self.left_drive_pub = self.create_publisher(
-            Float32,
-            'move_left_drivebase_side_message',
-            10
-        )
+        self.left_drive_pub = self.create_publisher(Float32, "move_left_drivebase_side_message", 10)
+
         self.right_drive_pub = self.create_publisher(
-            Float32,
-            'move_right_drivebase_side_message',
-            10
+            Float32, "move_right_drivebase_side_message", 10
         )
 
         # ===== TIMER =====
@@ -119,12 +105,13 @@ class DecisionMakingNode(Node):
 
         # Extract yaw from quaternion
         orientation = msg.pose.pose.orientation
-        _, _, self.global_theta = euler_from_quaternion([
-            orientation.x,
-            orientation.y,
-            orientation.z,
-            orientation.w
-        ])
+        _, _, self.global_theta = euler_from_quaternion(
+            [orientation.x, orientation.y, orientation.z, orientation.w]
+        )
+        # transforms3d uses wxyz order for quaternions
+        # _, _, self.global_theta = quat2euler(
+        #     [orientation.w, orientation.x, orientation.y, orientation.z], 'sxyz'
+        # )
 
         # Extract wheel velocities from twist (if available)
         # Or estimate from linear/angular velocity
@@ -138,10 +125,7 @@ class DecisionMakingNode(Node):
         left_linear = linear_vel - (angular_vel * wheel_base / 2.0)
         right_linear = linear_vel + (angular_vel * wheel_base / 2.0)
 
-        self.current_wheel_vel = (
-            left_linear / wheel_radius,
-            right_linear / wheel_radius
-        )
+        self.current_wheel_vel = (left_linear / wheel_radius, right_linear / wheel_radius)
 
     def costmap_callback(self, msg: OccupancyGrid) -> None:
         """Update costmap and initialize planner if needed."""
@@ -156,7 +140,7 @@ class DecisionMakingNode(Node):
                 current_position=(0.0, 0.0),  # Robot at costmap center
                 time_delta=0.1,
                 goal=(1.0, 0.0),  # Dummy goal
-                theta=0.0
+                theta=0.0,
             )
             self.get_logger().info("DWA Planner initialized")
 
@@ -192,19 +176,24 @@ class DecisionMakingNode(Node):
             return
 
         # Get current waypoint
-        current_goal_global = self.waypoint_queue[0]
+        current_goal_global = self.waypoint_queue.poses[0]
+        if current_goal_global is None:
+            self.stop_rover()
+            return
+        current_goal_global = (
+            current_goal_global.pose.position.x,
+            current_goal_global.pose.position.y,
+        )
 
         # Check if reached current waypoint
         distance_to_goal = math.sqrt(
-            (current_goal_global[0] - self.global_x) ** 2 +
-            (current_goal_global[1] - self.global_y) ** 2
+            (current_goal_global[0] - self.global_x) ** 2
+            + (current_goal_global[1] - self.global_y) ** 2
         )
 
         if distance_to_goal < self.waypoint_reached_threshold:
             self.waypoint_queue.popleft()
-            self.get_logger().info(
-                f"Reached waypoint! {len(self.waypoint_queue)} remaining"
-            )
+            self.get_logger().info(f"Reached waypoint! {len(self.waypoint_queue)} remaining")
 
             if not self.waypoint_queue:
                 self.stop_rover()
@@ -223,7 +212,7 @@ class DecisionMakingNode(Node):
             current_theta=0.0,  # Always facing forward in own frame
             current_velocity=self.current_wheel_vel,
             goal=goal_local,
-            global_pose=(self.global_x, self.global_y, self.global_theta)
+            global_pose=(self.global_x, self.global_y, self.global_theta),
         )
 
         # Plan and execute
@@ -237,10 +226,7 @@ class DecisionMakingNode(Node):
 
     # ===== HELPER FUNCTIONS =====
 
-    def transform_global_to_local(
-        self,
-        global_point: Tuple[float, float]
-    ) -> Tuple[float, float]:
+    def transform_global_to_local(self, global_point: Tuple[float, float]) -> Tuple[float, float]:
         """
         Transform a point from global (odom) frame to local (robot) frame.
 
@@ -260,6 +246,16 @@ class DecisionMakingNode(Node):
         local_y = dx_global * sin_theta + dy_global * cos_theta
 
         return (local_x, local_y)
+
+    def transform_path_to_list(self) -> List[Tuple[float, float]]:
+        """Convert Path message to waypoint queue."""
+        self.waypoint_queue.clear()
+        path_list: List = List()
+        for pose_stamped in self.waypoint_queue.poses():
+            x = pose_stamped.pose.position.x
+            y = pose_stamped.pose.position.y
+            path_list.put((x, y))
+        return path_list
 
     def stop_rover(self) -> None:
         """Publish zero velocity."""

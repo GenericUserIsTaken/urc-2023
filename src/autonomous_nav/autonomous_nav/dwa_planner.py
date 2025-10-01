@@ -35,96 +35,98 @@ class Trajectory:
         self.points.append((x, y, theta))
 
     def evaluate_trajectory(
-      self,
-      costmap: PyCostmap2D,
-      goal: Tuple[float, float],
-      max_linear_vel: float,
-      robot_radius: float,
-      costmap_frame_origin: Tuple[float, float],  # NEW: robot's position in odom when costmap centered
-  ) -> bool:
-      """
-      Evaluate trajectory and compute its total cost.
-      Returns False if trajectory collides with obstacles.
+        self,
+        costmap: PyCostmap2D,
+        goal: Tuple[float, float],
+        max_linear_vel: float,
+        robot_radius: float,
+        costmap_frame_origin: Tuple[
+            float, float
+        ],  # NEW: robot's position in odom when costmap centered
+    ) -> bool:
+        """
+        Evaluate trajectory and compute its total cost.
+        Returns False if trajectory collides with obstacles.
 
-      Args:
-          costmap_frame_origin: Robot's global position (odom frame) where costmap is centered
-      """
-      if not self.points:
-          return False
+        Args:
+            costmap_frame_origin: Robot's global position (odom frame) where costmap is centered
+        """
+        if not self.points:
+            return False
 
-      # Get costmap metadata
-      resolution = costmap.getResolution()  # meters per cell
-      origin_x = costmap.getOriginX()       # costmap's origin in its frame
-      origin_y = costmap.getOriginY()
-      size_x = costmap.getSizeInCellsX()
-      size_y = costmap.getSizeInCellsY()
+        # Get costmap metadata
+        resolution = costmap.getResolution()  # meters per cell
+        origin_x = costmap.getOriginX()  # costmap's origin in its frame
+        origin_y = costmap.getOriginY()
+        size_x = costmap.getSizeInCellsX()
+        size_y = costmap.getSizeInCellsY()
 
-      obstacle_cost = 0.0
-      min_clearance = float('inf')
+        obstacle_cost = 0.0
+        min_clearance = float("inf")
 
-      # Check each point in trajectory for collision
-      for x, y, _ in self.points:
-          # CRITICAL: Transform from odom frame to costmap frame
-          # If costmap is centered on robot, trajectory points are already in robot frame
-          # If costmap has its own origin, transform: world → costmap
-          map_x = (x - origin_x) / resolution
-          map_y = (y - origin_y) / resolution
+        # Check each point in trajectory for collision
+        for x, y, _ in self.points:
+            # CRITICAL: Transform from odom frame to costmap frame
+            # If costmap is centered on robot, trajectory points are already in robot frame
+            # If costmap has its own origin, transform: world → costmap
+            map_x = (x - origin_x) / resolution
+            map_y = (y - origin_y) / resolution
 
-          # Check bounds
-          if not (0 <= map_x < size_x and 0 <= map_y < size_y):
-              return False  # Trajectory goes outside costmap bounds
+            # Check bounds
+            if not (0 <= map_x < size_x and 0 <= map_y < size_y):
+                return False  # Trajectory goes outside costmap bounds
 
-          # Check robot footprint (circle approximation)
-          footprint_checks = []
-          num_angles = 8  # Check 8 points around robot circumference
-          for angle_idx in range(num_angles):
-              angle = 2 * math.pi * angle_idx / num_angles
-              check_x = x + robot_radius * math.cos(angle)
-              check_y = y + robot_radius * math.sin(angle)
+            # Check robot footprint (circle approximation)
+            footprint_checks = []
+            num_angles = 8  # Check 8 points around robot circumference
+            for angle_idx in range(num_angles):
+                angle = 2 * math.pi * angle_idx / num_angles
+                check_x = x + robot_radius * math.cos(angle)
+                check_y = y + robot_radius * math.sin(angle)
 
-              # Transform to map coordinates
-              check_map_x = int((check_x - origin_x) / resolution)
-              check_map_y = int((check_y - origin_y) / resolution)
+                # Transform to map coordinates
+                check_map_x = int((check_x - origin_x) / resolution)
+                check_map_y = int((check_y - origin_y) / resolution)
 
-              # Bounds check
-              if 0 <= check_map_x < size_x and 0 <= check_map_y < size_y:
-                  cost = float(costmap.getCostXY(check_map_x, check_map_y))
-                  footprint_checks.append(cost)
+                # Bounds check
+                if 0 <= check_map_x < size_x and 0 <= check_map_y < size_y:
+                    cost = float(costmap.getCostXY(check_map_x, check_map_y))
+                    footprint_checks.append(cost)
 
-                  # Lethal obstacle check
-                  if cost >= 253:
-                      return False  # Collision!
+                    # Lethal obstacle check
+                    if cost >= 253:
+                        return False  # Collision!
 
-                  # Accumulate obstacle proximity cost
-                  if cost > 0:
-                      obstacle_cost += cost
-                      min_clearance = min(min_clearance, (252 - cost) / 252.0)
+                    # Accumulate obstacle proximity cost
+                    if cost > 0:
+                        obstacle_cost += cost
+                        min_clearance = min(min_clearance, (252 - cost) / 252.0)
 
-      # Average obstacle cost across trajectory
-      avg_obstacle_cost = obstacle_cost / len(self.points) if self.points else 0.0
+        # Average obstacle cost across trajectory
+        avg_obstacle_cost = obstacle_cost / len(self.points) if self.points else 0.0
 
-      # Goal distance cost
-      final_x, final_y, final_theta = self.points[-1]
-      goal_distance = math.sqrt((final_x - goal[0]) ** 2 + (final_y - goal[1]) ** 2)
-      goal_cost = goal_distance
+        # Goal distance cost
+        final_x, final_y, final_theta = self.points[-1]
+        goal_distance = math.sqrt((final_x - goal[0]) ** 2 + (final_y - goal[1]) ** 2)
+        goal_cost = goal_distance
 
-      # Heading cost
-      goal_angle = math.atan2(goal[1] - final_y, goal[0] - final_x)
-      heading_diff = abs(self.normalize_angle(goal_angle - final_theta))
-      heading_cost = heading_diff
+        # Heading cost
+        goal_angle = math.atan2(goal[1] - final_y, goal[0] - final_x)
+        heading_diff = abs(self.normalize_angle(goal_angle - final_theta))
+        heading_cost = heading_diff
 
-      # Velocity cost (prefer higher velocities)
-      velocity_cost = (max_linear_vel - abs(self.linear_vel)) / max_linear_vel
+        # Velocity cost (prefer higher velocities)
+        velocity_cost = (max_linear_vel - abs(self.linear_vel)) / max_linear_vel
 
-      # Total weighted cost
-      self.cost = (
-          self.obstacle_cost_weight * avg_obstacle_cost +
-          self.goal_cost_weight * goal_cost +
-          self.heading_cost_weight * heading_cost +
-          self.velocity_cost_weight * velocity_cost
-      )
+        # Total weighted cost
+        self.cost = (
+            self.obstacle_cost_weight * avg_obstacle_cost
+            + self.goal_cost_weight * goal_cost
+            + self.heading_cost_weight * heading_cost
+            + self.velocity_cost_weight * velocity_cost
+        )
 
-      return True
+        return True
 
     @staticmethod
     def normalize_angle(angle: float) -> float:
@@ -137,6 +139,8 @@ class Trajectory:
 
 
 """" Might need major changes. Implementation uses rolling window costmap 2D. """
+
+
 class DWAPlanner:
     def __init__(
         self,
@@ -185,35 +189,35 @@ class DWAPlanner:
 
         # Minimum trajectory points for valid evaluation
         self.min_trajectory_points = 10
-        
-    def update_state(
-          self,
-          costmap: PyCostmap2D,
-          current_position: Tuple[float, float],
-          current_theta: float,
-          current_velocity: Tuple[float, float],
-          goal: Tuple[float, float],
-          global_pose: Tuple[float, float, float],
-      ) -> None:
-          """
-          Update planner state without recreating the object.
-          Call this each planning cycle before plan().
 
-          Args:
-              global_pose: Robot's pose in odom/map frame (x, y, theta)
-              current_position: Robot's position in local/costmap frame
-              goal: Goal position (must match frame of current_position)
-          """
-          self.costmap = costmap
-          self.current_pos = current_position
-          self.current_theta = current_theta
-          self.current_wheel_vel = current_velocity
-          self.goal = goal
-          self.global_pose = global_pose
+    def update_state(
+        self,
+        costmap: PyCostmap2D,
+        current_position: Tuple[float, float],
+        current_theta: float,
+        current_velocity: Tuple[float, float],
+        goal: Tuple[float, float],
+        global_pose: Tuple[float, float, float],
+    ) -> None:
+        """
+        Update planner state without recreating the object.
+        Call this each planning cycle before plan().
+
+        Args:
+            global_pose: Robot's pose in odom/map frame (x, y, theta)
+            current_position: Robot's position in local/costmap frame
+            goal: Goal position (must match frame of current_position)
+        """
+        self.costmap = costmap
+        self.current_pos = current_position
+        self.current_theta = current_theta
+        self.current_wheel_vel = current_velocity
+        self.goal = goal
+        self.global_pose = global_pose
 
     def plan(self) -> Tuple[float, float]:
         """
-        Main planning method - generates trajectories and returns best wheel velocities. 
+        Main planning method - generates trajectories and returns best wheel velocities.
 
         Returns:
             (left_wheel_vel, right_wheel_vel) in rad/s
@@ -236,8 +240,11 @@ class DWAPlanner:
 
             # Evaluate trajectory (computes cost and checks collisions)
             if trajectory.evaluate_trajectory(
-                self.costmap, self.goal, self.max_linear_vel, self.robot_radius,
-                costmap_frame_origin=(self.global_pose[0], self.global_pose[1])
+                self.costmap,
+                self.goal,
+                self.max_linear_vel,
+                self.robot_radius,
+                costmap_frame_origin=(self.global_pose[0], self.global_pose[1]),
             ):
                 valid_trajectories.append(trajectory)
 

@@ -42,11 +42,13 @@ RUN apt-get update && apt-get install -y \
     && (apt-get install -y \
     ros-humble-nav2-simple-commander \
     ros-humble-nav-msgs \
+    #ros-humble-tf-transformations \
     || echo "Warning: Some ROS packages may not be available") \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-RUN pip3 install moteus pyusb opencv-python pydocstyle
+RUN pip3 install moteus pyusb opencv-python pydocstyle 
+# transforms3d
 
 # Create user
 RUN useradd trickfire \
