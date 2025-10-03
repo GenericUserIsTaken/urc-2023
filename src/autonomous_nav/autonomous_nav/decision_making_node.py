@@ -10,7 +10,6 @@ Functionality:
 
 import math
 import sys
-from queue import Queue
 from typing import List, Optional, Tuple
 
 import rclpy
@@ -28,7 +27,7 @@ from lib.color_codes import ColorCodes, colorStr
 from .dwa_planner import DWAPlanner
 
 # Alternative library than tf_transformations - currently not working in Dockerfile
-# from transforms3d.euler import quat2euler 
+# from transforms3d.euler import quat2euler
 
 
 class DecisionMakingNode(Node):
