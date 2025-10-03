@@ -20,14 +20,11 @@ from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Float32, String
-from tf_transformations import euler_from_quaternion  # Currently not working in Dockerfile
+from transforms3d.euler import quat2euler
 
 from lib.color_codes import ColorCodes, colorStr
 
 from .dwa_planner import DWAPlanner
-
-# Alternative library than tf_transformations - currently not working in Dockerfile
-# from transforms3d.euler import quat2euler
 
 
 class DecisionMakingNode(Node):
@@ -51,7 +48,7 @@ class DecisionMakingNode(Node):
         self.last_right_vel = 0.0
 
         # Waypoint queue (stores waypoints in global frame)  - Updated to Path message
-        self.waypoint_queue = Path().poses
+        self.waypoint_list: List[Tuple[float, float]] = []
         self.waypoint_reached_threshold = 0.5  # meters
 
         # Costmap
@@ -105,14 +102,9 @@ class DecisionMakingNode(Node):
 
         # Extract yaw from quaternion
         orientation = msg.pose.pose.orientation
-        _, _, self.global_theta = euler_from_quaternion(
-            [orientation.x, orientation.y, orientation.z, orientation.w]
+        _, _, self.global_theta = quat2euler(
+            [orientation.w, orientation.x, orientation.y, orientation.z], "sxyz"
         )
-        # transforms3d uses wxyz order for quaternions - alternative library - currently not working
-        # in Dockerfile
-        # _, _, self.global_theta = quat2euler(
-        #     [orientation.w, orientation.x, orientation.y, orientation.z], 'sxyz'
-        # )
 
         # Extract wheel velocities from twist (if available)
         # Or estimate from linear/angular velocity
@@ -147,7 +139,7 @@ class DecisionMakingNode(Node):
 
     def path_callback(self, msg: Path) -> None:
         """Receive new waypoint queue."""
-        self.waypoint_queue.clear()
+        self.waypoint_list.clear()
 
         # Take first 10 waypoints
         for pose_stamped in msg.poses[:10]:
@@ -250,7 +242,7 @@ class DecisionMakingNode(Node):
 
     def transform_path_to_list(self) -> List[Tuple[float, float]]:
         """Convert Path message to waypoint queue."""
-        self.waypoint_queue.clear()
+        # self.waypoint_queue.clear()
         path_list: List = List()
         for pose_stamped in self.waypoint_queue.poses():
             x = pose_stamped.pose.position.x

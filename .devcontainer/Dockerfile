@@ -47,8 +47,17 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-RUN pip3 install moteus pyusb opencv-python pydocstyle 
-# transforms3d
+RUN pip3 install moteus pyusb opencv-python pydocstyle transforms3d
+
+# Clone and build tf_transformations from source
+RUN mkdir -p /tmp/tf_ws/src && \
+    cd /tmp/tf_ws/src && \
+    git clone https://github.com/DLu/tf_transformations.git && \
+    cd /tmp/tf_ws && \
+    . /opt/ros/humble/setup.sh && \
+    colcon build && \
+    cp -r /tmp/tf_ws/install/tf_transformations /opt/ros/humble/ && \
+    rm -rf /tmp/tf_ws
 
 # Create user
 RUN useradd trickfire \

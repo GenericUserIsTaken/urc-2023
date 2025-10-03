@@ -34,19 +34,23 @@ class Trajectory:
         """Add a point to the trajectory."""
         self.points.append((x, y, theta))
 
+    # EVALUATE BASED ON THE DISTANCE TO THE NEXT PATH POSE. CLOSER TO THE NEXT POINT MEANS LOWER
+    # COST GIVEN THE ROVER IS AT THE CURRENT WAYPOINT
     def evaluate_trajectory(
         self,
         costmap: PyCostmap2D,
         goal: Tuple[float, float],
         max_linear_vel: float,
         robot_radius: float,
-        costmap_frame_origin: Tuple[
-            float, float
-        ],  # NEW: robot's position in odom when costmap centered
+        costmap_frame_origin: Tuple[float, float],
     ) -> bool:
         """
         Evaluate trajectory and compute its total cost.
         Returns False if trajectory collides with obstacles.
+
+        Prioritize trajectories that make it to the current goal. If that is none, then prioritize
+        trajectories that get closer to the goal with a bias for getting closer to the next goal.
+
 
         Args:
             costmap_frame_origin: Robot's global position (odom frame) where costmap is centered
@@ -138,7 +142,7 @@ class Trajectory:
         return angle
 
 
-"""" Might need major changes. Implementation uses rolling window costmap 2D. """
+"""" Might need major changes. Implementation is going to use rolling window costmap 2D. """
 
 
 class DWAPlanner:
