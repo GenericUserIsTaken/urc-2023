@@ -51,7 +51,6 @@ class Trajectory:
         Prioritize trajectories that make it to the current goal. If that is none, then prioritize
         trajectories that get closer to the goal with a bias for getting closer to the next goal.
 
-
         Args:
             costmap_frame_origin: Robot's global position (odom frame) where costmap is centered
         """
@@ -175,7 +174,7 @@ class DWAPlanner:
 
         # Gear ratio or encoder scaling factor
         # This converts between motor commands and actual wheel velocities
-        self.wheel_vel_scaling = 1.0  # Adjust based on your hardware
+        self.wheel_vel_scaling = 1 / 16  # Adjust based on your hardware
 
         # Velocity limits (in m/s and rad/s)
         self.max_linear_vel = 1.0  # Maximum forward velocity
