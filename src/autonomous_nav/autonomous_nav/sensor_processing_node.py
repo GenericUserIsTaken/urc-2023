@@ -58,13 +58,15 @@ class SensorProcessingNode(Node):
 
         # ----------------------------------------------------------------------
         # Publishers
-        self.filtered_cloud_pub = self.create_publisher(PointCloud2, "/filtered_point_cloud", 10)
-
+        self.filtered_cloud_pub = self.create_publisher(
+            PointCloud2, "/filtered_point_cloud", 10
+        )
+        
         self.get_logger().info("sensor_processing_node is up and running.")
         self.get_logger().info("Publishing filtered point clouds to /filtered_point_cloud")
-        self.get_logger().info(
-            "Start octomap_server with: ros2 run octomap_server octomap_server_node --ros-args -r cloud_in:=/filtered_point_cloud -p resolution:=0.05"
-        )
+        self.get_logger().info("Start octomap_server with: ros2 run octomap_server octomap_server_node --ros-args -r cloud_in:=/filtered_point_cloud -p resolution:=0.05")
+
+
 
     # --------------------------------------------------------------------------
     #   processCameraInfo
@@ -125,7 +127,9 @@ class SensorProcessingNode(Node):
             self.cloud_frame_count += 1
             if self.cloud_frame_count % 20 != 0:
                 return
-            self.get_logger().info(f"Processing point cloud frame {self.cloud_frame_count}")
+            self.get_logger().info(
+                f"Processing point cloud frame {self.cloud_frame_count}"
+            )
             points = self.extract_all_points(msg)
 
             # if no points were extracted, log a warning
@@ -166,7 +170,7 @@ class SensorProcessingNode(Node):
             if x_offset is None or y_offset is None or z_offset is None:
                 self.get_logger().warning("PointCloud2 does not contain x, y, z fields")
                 return np.array([])
-
+            
             data = cloud_msg.data
             total_points = cloud_msg.width * cloud_msg.height
             points = np.full((total_points, 3), np.nan, dtype=np.float32)
@@ -231,7 +235,7 @@ class SensorProcessingNode(Node):
             self.filtered_cloud_pub.publish(cloud_msg)
         except Exception as e:
             self.get_logger().error(f"Failed to publish filtered cloud: {e}")
-
+            
     # --------------------------------------------------------------------------
     #   ArUco Marker Detection
     # --------------------------------------------------------------------------
