@@ -87,12 +87,6 @@ RUN apt-get update && \
     rm ZED_SDK_Linux_Ubuntu.run && \
     rm -rf /var/lib/apt/lists/*
 
-# Clone the ZED ROS2 Wrapper repository (and its submodules) into the workspace.
-RUN mkdir -p /home/trickfire/urc-2023/src/zed-ros2-wrapper
-WORKDIR /home/trickfire/urc-2023/src/zed-ros2-wrapper
-# Either use git submodule commands or a direct recursive clone
-RUN git clone --recursive https://github.com/stereolabs/zed-ros2-wrapper.git
-
 # Add a user so we can remote into this container with a non-root user
 RUN useradd trickfire \
     # Bash will be its default shell
@@ -111,7 +105,7 @@ COPY .devcontainer/trickfire.bashrc /home/trickfire/.bashrc
 RUN echo "trickfire:trickfire" | chpasswd && echo "root:trickfire" | chpasswd
 
 # Give sudo access.
-RUN echo "trickfire ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/user && chmod 0440 /etc/sudoers.d/user
+RUN echo "trickfire ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/user
 
 # Fix permissions.
 RUN rosdep fix-permissions && \
