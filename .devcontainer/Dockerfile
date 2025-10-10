@@ -101,9 +101,6 @@ RUN useradd trickfire \
 # Copy all the bash customizations over to the user.
 COPY .devcontainer/trickfire.bashrc /home/trickfire/.bashrc
 
-# Set user password.
-RUN echo "trickfire:trickfire" | chpasswd && echo "root:trickfire" | chpasswd
-
 # Give sudo access.
 RUN echo "trickfire ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/user
 
