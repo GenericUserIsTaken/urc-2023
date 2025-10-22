@@ -3,9 +3,9 @@ import os
 import launch
 from ament_index_python import get_package_share_directory
 from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_xml.launch_description_sources import XMLLaunchDescriptionSource
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 can_moteus_node = Node(package="can_moteus", executable="can_moteus", name="can_moteus_node")
 
@@ -22,6 +22,10 @@ mission_control_updater_node = Node(
 arm_node = Node(package="arm", executable="arm", name="arm_node")
 
 heartbeat_node = Node(package="heartbeat", executable="heartbeat", name="heartbeat_node")
+
+localization_node = Node(
+    package="localization", executable="localization", name="localization_node"
+)
 
 camera_node = Node(package="camera", executable="roscamera", name="camera_node")
 
@@ -131,6 +135,7 @@ def generate_launch_description() -> launch.LaunchDescription:  # pylint: disabl
             mission_control_updater_node,
             arm_node,
             heartbeat_node,
+            localization_node,
             camera_node,
             decision_making_node,
             gps_anchor_node,
