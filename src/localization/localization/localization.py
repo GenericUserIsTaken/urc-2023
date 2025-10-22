@@ -1,6 +1,7 @@
 import sys
 
 import rclpy
+from geometry_msgs.msg import Quaternion, Vector3
 from nav_msgs.msg import Odometry
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
