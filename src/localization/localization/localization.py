@@ -2,7 +2,9 @@ import sys
 
 import rclpy
 from geometry_msgs.msg import Quaternion, Vector3
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry  # todo, incorporate odometry to make position more accurate
+
+# todo, subscribe to imu to get rotation information
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import NavSatFix
@@ -29,10 +31,15 @@ class Localization(Node):
         # supposedly 10 in the subscription refers to the queue size, but who knows what that means
         self.gps_sub = self.create_subscription(NavSatFix, "/anchor_position", self.processGPS, 10)
         # setup publisher to publish localization position
+        self.local_position_pub = self.create_publisher(Vector3, "localization_local_position", 10)
+        self.global_position_pub = self.create_publisher(
+            Vector3, "localization_global_position", 10
+        )
+        # self.rotation_pub = self.create_publisher(Quaternion, "localization_rotation", 10)
 
     def processGPS(self, msg: Float64MultiArray) -> None:
         """
-        Updates self.current_position and self.current_yaw from odometry.
+        Updates self.local_position and self.init_position from gps.
         """
         # [self.anchor_lat, self.anchor_lon, self.anchor_alt]
         if self._first_gps_recieved:
@@ -45,12 +52,32 @@ class Localization(Node):
             self.init_pos.data = [msg.data[0], msg.data[1], msg.data[2]]
             self._first_gps_recieved = True
 
+        self.global_pos.data = [
+            msg.data[0],
+            msg.data[1],
+            msg.data[2],
+        ]
+        self.publishPosition()
 
-# def odomCallback(self, msg: Odometry) -> None:
-#    """
-#    Updates self.current_position and self.current_yaw from odometry.
-#    """
-#    pass
+    def publishLocalPosition(self) -> None:
+        contents = self.local_pos
+        msg = Vector3()  # Create the message
+        msg.x = contents[1]  # x = lon
+        msg.y = contents[0]  # y = lat
+        msg.z = contents[2]  # z = alt
+        self.local_position_pub.publish(msg)
+
+    def publishGlobalPosition(self) -> None:
+        contents = self.global_pos
+        msg = Vector3()  # Create the message
+        msg.x = contents[1]  # x = lon
+        msg.y = contents[0]  # y = lat
+        msg.z = contents[2]  # z = alt
+        self.global_position_pub.publish(msg)
+
+    def publishPosition(self) -> None:
+        self.publishLocalPosition()
+        self.publishGlobalPosition()
 
 
 def main(args: list[str] | None = None) -> None:
