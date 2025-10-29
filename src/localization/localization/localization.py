@@ -7,12 +7,13 @@ from nav_msgs.msg import Odometry  # todo, incorporate odometry to make position
 # todo, subscribe to imu to get rotation information
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from sensor_msgs.msg import NavSatFix
+from sensor_msgs.msg import Imu, NavSatFix
 from std_msgs.msg import Float64MultiArray
 
 from lib.color_codes import ColorCodes, colorStr
 
 
+#'zed/zed_node/imu/data'
 class Localization(Node):
 
     def __init__(self) -> None:
@@ -30,11 +31,13 @@ class Localization(Node):
         self.get_logger().info(colorStr("Launching localization_node", ColorCodes.BLUE_OK))
         # supposedly 10 in the subscription refers to the queue size, but who knows what that means
         self.gps_sub = self.create_subscription(NavSatFix, "/anchor_position", self.processGPS, 10)
+        self.gps_sub = self.create_subscription(Imu, "/zed/zed_node/imu/data", self.processIMU, 10)
         # setup publisher to publish localization position
         self.local_position_pub = self.create_publisher(Vector3, "localization_local_position", 10)
         self.global_position_pub = self.create_publisher(
             Vector3, "localization_global_position", 10
         )
+        self.orientation_pub = self.create_publisher(Quaternion, "localization_orientation", 10)
         # self.rotation_pub = self.create_publisher(Quaternion, "localization_rotation", 10)
 
     def processGPS(self, msg: Float64MultiArray) -> None:
@@ -59,6 +62,14 @@ class Localization(Node):
         ]
         self.publishPosition()
 
+    def processIMU(self, msg: Imu) -> None:
+        content = "quaternion from imu" + msg.orientation
+        self.get_logger().info(colorStr(content, ColorCodes.GREEN_OK))
+        self.orientation_pub.publish(msg.orientation)
+        # could also use this info:
+        # msg.linear_acceleration
+        # msg.angular_velocity
+
     def publishLocalPosition(self) -> None:
         contents = self.local_pos
         msg = Vector3()  # Create the message
@@ -78,6 +89,8 @@ class Localization(Node):
     def publishPosition(self) -> None:
         self.publishLocalPosition()
         self.publishGlobalPosition()
+
+    # def global_gps_loc_to_local_offset(self):
 
 
 def main(args: list[str] | None = None) -> None:
