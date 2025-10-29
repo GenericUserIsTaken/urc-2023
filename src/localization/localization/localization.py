@@ -37,7 +37,9 @@ class Localization(Node):
         self.global_position_pub = self.create_publisher(
             Vector3, "localization_global_position", 10
         )
-        self.orientation_pub = self.create_publisher(Quaternion, "localization_orientation", 10)
+        self.local_orientation_pub = self.create_publisher(
+            Quaternion, "localization_local_orientation", 10
+        )
         # self.rotation_pub = self.create_publisher(Quaternion, "localization_rotation", 10)
 
     def processGPS(self, msg: Float64MultiArray) -> None:
@@ -65,7 +67,7 @@ class Localization(Node):
     def processIMU(self, msg: Imu) -> None:
         content = "quaternion from imu" + msg.orientation
         self.get_logger().info(colorStr(content, ColorCodes.GREEN_OK))
-        self.orientation_pub.publish(msg.orientation)
+        self.local_orientation_pub.publish(msg.orientation)
         # could also use this info:
         # msg.linear_acceleration
         # msg.angular_velocity
