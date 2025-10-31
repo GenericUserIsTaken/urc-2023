@@ -1,7 +1,7 @@
 import sys
 
 import rclpy
-from geometry_msgs.msg import Quaternion, Vector3
+from geometry_msgs.msg import PoseStamped, Quaternion, Vector3
 from nav_msgs.msg import Odometry  # todo, incorporate odometry to make position more accurate
 
 # todo, subscribe to imu to get rotation information
@@ -28,6 +28,7 @@ class Localization(Node):
         self.global_pos = Float64MultiArray()  # calculated offset from first gps coords
         self.global_pos.data = [0, 0, 0]
         # self.global_pos.data = [self.anchor_lat, self.anchor_lon, self.anchor_alt]
+        self.current_pose = PoseStamped()
         self.get_logger().info(colorStr("Launching localization_node", ColorCodes.BLUE_OK))
         # supposedly 10 in the subscription refers to the queue size, but who knows what that means
         self.gps_sub = self.create_subscription(NavSatFix, "/anchor_position", self.processGPS, 10)
@@ -40,6 +41,13 @@ class Localization(Node):
         self.local_orientation_pub = self.create_publisher(
             Quaternion, "localization_local_orientation", 10
         )
+
+        self.local_posestamped = self.create_publisher(
+            PoseStamped, "localization_local_posestamped", 10
+        )
+        # Timer to periodically publish the robot's pose
+        self.timer = self.create_timer(0.1, self.publishPose)
+
         # self.rotation_pub = self.create_publisher(Quaternion, "localization_rotation", 10)
 
     def processGPS(self, msg: Float64MultiArray) -> None:
@@ -67,6 +75,7 @@ class Localization(Node):
     def processIMU(self, msg: Imu) -> None:
         content = "quaternion from imu" + msg.orientation
         self.get_logger().info(colorStr(content, ColorCodes.GREEN_OK))
+        self.current_pose.pose.orientation = msg.orientation
         self.local_orientation_pub.publish(msg.orientation)
         # could also use this info:
         # msg.linear_acceleration
@@ -91,6 +100,18 @@ class Localization(Node):
     def publishPosition(self) -> None:
         self.publishLocalPosition()
         self.publishGlobalPosition()
+
+    def publishStampedPose(self) -> None:
+        contents = self.local_pos
+        # fill position information from current local position
+        self.current_pose.pose.position.x = contents[1]  # x = lon
+        self.current_pose.pose.position.y = contents[0]  # y = lat
+        self.current_pose.pose.position.z = contents[2]  # z = alt
+        # self.current_pose.pose.orientation is updated whenever we get new imu data above
+        # self.current_pose.header.stamp update timestamp for publication
+        self.current_pose.header.stamp = self.get_clock().now().to_msg()
+        # self.current_pose.header.frame_id
+        pass
 
     # def global_gps_loc_to_local_offset(self):
 
